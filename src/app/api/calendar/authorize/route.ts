@@ -32,7 +32,11 @@ export async function GET(_request: NextRequest) {
     });
 
     return NextResponse.json({ authUrl });
-  } catch {
-    return NextResponse.json({ error: 'Error interno' }, { status: 500 });
+  } catch (error: any) {
+    console.error('Error in calendar authorize:', error);
+    return NextResponse.json({ 
+      error: 'Error al generar URL de Google',
+      details: error.message 
+    }, { status: 500 });
   }
 }

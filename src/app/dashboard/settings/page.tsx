@@ -196,7 +196,7 @@ export default function Settings() {
       if (data.authUrl) {
         window.location.href = data.authUrl;
       } else {
-        alert('Error: No se pudo obtener la URL de autorización');
+        alert(`Error: ${data.error || 'No se pudo obtener la URL'} \nDetalles: ${data.details || 'Revisa las variables de entorno'}`);
       }
     } catch (error) {
       console.error('Error:', error);
