@@ -1,0 +1,168 @@
+// app/dashboard/calendar/page.tsx - CALENDARIO
+'use client';
+
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { supabase } from '@/lib/supabase';
+import DashboardNav from '@/components/DashboardNav';
+import { Calendar, Clock, Phone, Trash2 } from 'lucide-react';
+import type { Business, Appointment } from '@/types';
+
+export default function CalendarPage() {
+  const router = useRouter();
+  const [business, setBusiness] = useState<Business | null>(null);
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+          router.push('/auth/login');
+          return;
+        }
+
+        const { data: biz } = await supabase
+          .from('businesses')
+          .select('*')
+          .eq('user_id', user.id)
+          .single();
+
+        if (!biz) {
+          router.push('/dashboard');
+          return;
+        }
+
+        if (biz.plan !== 'ia_calendar') {
+          router.push('/dashboard');
+          return;
+        }
+
+        setBusiness(biz);
+
+        const { data: appts } = await supabase
+          .from('appointments')
+          .select('*')
+          .eq('business_id', biz.id)
+          .gte('date_time', new Date().toISOString())
+          .order('date_time', { ascending: true });
+
+        setAppointments(appts || []);
+      } catch (error) {
+        console.error('Error:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [router]);
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('¿Cancelar esta cita?')) return;
+
+    await supabase.from('appointments').delete().eq('id', id);
+    setAppointments(appointments.filter((a) => a.id !== id));
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
+
+  if (!business) return null;
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <DashboardNav business={business} />
+
+      <main className="max-w-4xl mx-auto px-4 py-8">
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold text-gray-900">📅 Calendario</h1>
+          <p className="text-gray-500 mt-1">
+            {appointments.length} citas próximas
+            {business.google_calendar_email && (
+              <span className="ml-2 text-green-600">
+                • Sincronizado con {business.google_calendar_email}
+              </span>
+            )}
+          </p>
+        </div>
+
+        {appointments.length === 0 ? (
+          <div className="bg-white rounded-xl p-12 shadow-sm border border-gray-100 text-center">
+            <Calendar className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Sin citas próximas</h3>
+            <p className="text-gray-500 text-sm">
+              Las citas agendadas por el bot aparecerán aquí automáticamente.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {appointments.map((appt) => {
+              const date = new Date(appt.date_time);
+              return (
+                <div
+                  key={appt.id}
+                  className="bg-white rounded-xl p-5 shadow-sm border border-gray-100 hover:shadow-md transition-all duration-300"
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-start gap-4">
+                      {/* Date block */}
+                      <div className="bg-blue-50 rounded-xl p-3 text-center min-w-[70px]">
+                        <p className="text-xs text-blue-600 font-medium uppercase">
+                          {date.toLocaleDateString('es-CL', { weekday: 'short' })}
+                        </p>
+                        <p className="text-2xl font-bold text-blue-700">
+                          {date.getDate()}
+                        </p>
+                        <p className="text-xs text-blue-500">
+                          {date.toLocaleDateString('es-CL', { month: 'short' })}
+                        </p>
+                      </div>
+
+                      {/* Details */}
+                      <div>
+                        <h3 className="font-semibold text-gray-900">{appt.patient_name}</h3>
+                        <div className="flex flex-col gap-1 mt-1.5">
+                          <span className="flex items-center gap-2 text-sm text-gray-500">
+                            <Clock className="w-4 h-4" />
+                            {date.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                          {appt.patient_phone && (
+                            <span className="flex items-center gap-2 text-sm text-gray-500">
+                              <Phone className="w-4 h-4" />
+                              {appt.patient_phone}
+                            </span>
+                          )}
+                          {appt.service && (
+                            <span className="inline-block mt-1 px-3 py-1 bg-indigo-50 text-indigo-700 rounded-full text-xs font-medium">
+                              {appt.service}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Actions */}
+                    <button
+                      onClick={() => handleDelete(appt.id)}
+                      className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition"
+                      title="Cancelar cita"
+                    >
+                      <Trash2 className="w-5 h-5" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </main>
+    </div>
+  );
+}
