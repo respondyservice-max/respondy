@@ -46,8 +46,8 @@ export async function POST(request: NextRequest) {
     const encrypted_api_key = encrypt(zavu_api_key);
     const encrypted_sender_id = encrypt(zavu_sender_id);
 
-    // Guardar en BD
-    const { error: updateError } = await supabaseAdmin
+    // Guardar en BD usando el cliente normal (ya que el usuario está autenticado)
+    const { error: updateError } = await supabase
       .from('businesses')
       .update({
         zavu_api_key_encrypted: encrypted_api_key,
