@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 // app/api/zavu-webhook/route.ts - WEBHOOK DE ZAVU (SEGURO)
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';

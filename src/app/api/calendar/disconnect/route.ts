@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 // app/api/calendar/disconnect/route.ts - DESCONECTAR GOOGLE CALENDAR
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase, supabaseAdmin } from '@/lib/supabase';

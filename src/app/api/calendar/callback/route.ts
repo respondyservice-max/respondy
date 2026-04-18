@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 // app/api/calendar/callback/route.ts - CALLBACK DE GOOGLE OAUTH
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';

@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 // app/api/business/credentials/route.ts - GUARDAR CREDENCIALES
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase, supabaseAdmin } from '@/lib/supabase';
