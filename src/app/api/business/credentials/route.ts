@@ -58,7 +58,7 @@ export async function POST(request: NextRequest) {
 
     if (updateError) {
       return NextResponse.json(
-        { error: 'Error al guardar credenciales' },
+        { error: `Error al guardar credenciales: ${updateError.message}` },
         { status: 500 }
       );
     }
