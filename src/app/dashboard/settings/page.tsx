@@ -130,9 +130,14 @@ export default function Settings() {
     setZavuMessage('');
 
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      
       const response = await fetch('/api/business/credentials', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token || ''}`
+        },
         body: JSON.stringify({
           zavu_api_key: zavuForm.zavu_api_key,
           zavu_sender_id: zavuForm.zavu_sender_id,
@@ -161,8 +166,12 @@ export default function Settings() {
     if (!confirm('¿Desconectar Zavu? Tu bot dejará de funcionar.')) return;
 
     try {
+      const { data: { session } } = await supabase.auth.getSession();
       const response = await fetch('/api/business/disconnect-zavu', {
         method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session?.access_token || ''}`
+        }
       });
 
       if (response.ok) {
@@ -191,8 +200,12 @@ export default function Settings() {
     if (!confirm('¿Desconectar Google Calendar?')) return;
 
     try {
+      const { data: { session } } = await supabase.auth.getSession();
       const response = await fetch('/api/calendar/disconnect', {
         method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session?.access_token || ''}`
+        }
       });
 
       if (response.ok) {

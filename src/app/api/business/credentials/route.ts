@@ -7,7 +7,9 @@ import { encrypt } from '@/lib/crypto';
 // POST: Guardar credenciales de Zavu
 export async function POST(request: NextRequest) {
   try {
-    const { data: { user } } = await supabase.auth.getUser();
+    const authHeader = request.headers.get('Authorization');
+    const token = authHeader?.split('Bearer ')[1];
+    const { data: { user } } = await supabase.auth.getUser(token);
     if (!user) {
       return NextResponse.json({ error: 'No autenticado' }, { status: 401 });
     }
