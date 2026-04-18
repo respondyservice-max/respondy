@@ -12,7 +12,7 @@ const oauth2Client = new google.auth.OAuth2(
 );
 
 // GET: Generar URL para que cliente autorice su Calendar
-export async function GET(_request: NextRequest) {
+export async function GET(request: NextRequest) {
   try {
     const authHeader = request.headers.get('Authorization');
     const token = authHeader?.split('Bearer ')[1];
