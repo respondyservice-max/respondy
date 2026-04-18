@@ -186,9 +186,18 @@ export default function Settings() {
   // Google Calendar OAuth
   const handleConnectCalendar = async () => {
     try {
-      const response = await fetch('/api/calendar/authorize');
-      const { authUrl } = await response.json();
-      window.location.href = authUrl;
+      const { data: { session } } = await supabase.auth.getSession();
+      const response = await fetch('/api/calendar/authorize', {
+        headers: {
+          'Authorization': `Bearer ${session?.access_token || ''}`
+        }
+      });
+      const data = await response.json();
+      if (data.authUrl) {
+        window.location.href = data.authUrl;
+      } else {
+        alert('Error: No se pudo obtener la URL de autorización');
+      }
     } catch (error) {
       console.error('Error:', error);
       alert('Error al conectar con Google Calendar');
