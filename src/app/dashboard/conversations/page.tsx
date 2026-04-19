@@ -1,15 +1,16 @@
-// app/dashboard/conversations/page.tsx - CONVERSACIONES (NUEVO DISEÑO)
+// app/dashboard/conversations/page.tsx - CONVERSACIONES (NUEVO DISEÑO + AUTO SCROLL)
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import DashboardNav from '@/components/DashboardNav';
-import { MessageSquare, ArrowLeft, Search, Phone, User, Send } from 'lucide-react';
+import { MessageSquare, ArrowLeft, Search, User, Send } from 'lucide-react';
 import type { Business, Conversation } from '@/types';
 
 export default function ConversationsPage() {
   const router = useRouter();
+  const chatContainerRef = useRef<HTMLDivElement>(null);
   const [business, setBusiness] = useState<Business | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -54,6 +55,13 @@ export default function ConversationsPage() {
 
     fetchData();
   }, [router]);
+
+  // Auto-scroll al final del chat
+  useEffect(() => {
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+    }
+  }, [selectedPhone, conversations]);
 
   // Agrupar mensajes por teléfono
   const contacts = useMemo(() => {
@@ -168,7 +176,7 @@ export default function ConversationsPage() {
               </div>
 
               {/* Messages Area */}
-              <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 bg-[#f8f9fa]">
+              <div ref={chatContainerRef} className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 bg-[#f8f9fa] scroll-smooth">
                 {activeChatMessages.map((msg, idx) => (
                   <div key={msg.id} className={`flex ${msg.message_type === 'incoming' ? 'justify-start' : 'justify-end'}`}>
                     <div className={`max-w-[85%] sm:max-w-[70%] rounded-2xl p-3 sm:p-4 shadow-sm relative ${
