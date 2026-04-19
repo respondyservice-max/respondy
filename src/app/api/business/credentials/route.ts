@@ -46,26 +46,36 @@ export async function POST(request: NextRequest) {
     const encrypted_api_key = encrypt(zavu_api_key);
     const encrypted_sender_id = encrypt(zavu_sender_id);
 
-    // Guardar en BD usando el cliente normal (ya que el usuario está autenticado)
-    const { error: updateError } = await supabase
+    // Guardar en BD usando supabaseAdmin para asegurar que el guardado ocurra
+    const { data: updateData, error: updateError, status } = await supabaseAdmin
       .from('businesses')
       .update({
         zavu_api_key_encrypted: encrypted_api_key,
         zavu_sender_id_encrypted: encrypted_sender_id,
         updated_at: new Date().toISOString(),
       })
-      .eq('user_id', user.id);
+      .eq('user_id', user.id)
+      .select();
+
+    console.log('Intento de guardado - Status:', status, 'User ID:', user.id);
 
     if (updateError) {
       return NextResponse.json(
-        { error: `Error al guardar credenciales: ${updateError.message}` },
+        { error: `Error de base de datos: ${updateError.message}` },
         { status: 500 }
+      );
+    }
+
+    if (!updateData || updateData.length === 0) {
+      return NextResponse.json(
+        { error: 'No se encontró tu negocio para actualizar. ¿Completaste el setup inicial?' },
+        { status: 404 }
       );
     }
 
     return NextResponse.json({
       success: true,
-      message: 'Credenciales guardadas de forma segura',
+      message: 'Credenciales guardadas y verificadas en la base de datos',
       sender_id: zavu_sender_id,
     });
   } catch (error) {
