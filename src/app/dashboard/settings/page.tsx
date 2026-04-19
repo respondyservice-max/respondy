@@ -15,6 +15,7 @@ export default function Settings() {
   const [saving, setSaving] = useState(false);
   const [zavuConnected, setZavuConnected] = useState(false);
   const [calendarConnected, setCalendarConnected] = useState(false);
+  const [aiBotEnabled, setAiBotEnabled] = useState(true);
   const [activeTab, setActiveTab] = useState<'negocio' | 'integraciones'>('negocio');
 
   const [form, setForm] = useState({
@@ -72,6 +73,7 @@ export default function Settings() {
         if (data.zavu_api_key_encrypted) {
           setZavuConnected(true);
         }
+        setAiBotEnabled(data.ai_bot_enabled !== false); // Default a true if undefined
         if (data.google_calendar_id) {
           setCalendarConnected(true);
         }
@@ -158,6 +160,31 @@ export default function Settings() {
       console.error(error);
     } finally {
       setZavuLoading(false);
+    }
+  };
+
+  // Alternar Bot IA
+  const handleToggleAiBot = async () => {
+    const newValue = !aiBotEnabled;
+    setAiBotEnabled(newValue);
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { error } = await supabase
+        .from('businesses')
+        .update({ ai_bot_enabled: newValue })
+        .eq('user_id', user.id);
+
+      if (error) {
+        console.error('Error al actualizar Bot IA:', error);
+        setAiBotEnabled(!newValue); // Revertir si falló
+        alert('Error al actualizar el estado del bot');
+      }
+    } catch (error) {
+      console.error('Error:', error);
+      setAiBotEnabled(!newValue);
     }
   };
 
@@ -473,12 +500,38 @@ export default function Settings() {
                   </button>
                 </form>
               ) : (
-                <button
-                  onClick={handleDisconnectZavu}
-                  className="px-6 py-2.5 border border-red-200 text-red-600 rounded-xl hover:bg-red-50 transition font-medium text-sm"
-                >
-                  Desconectar
-                </button>
+                <div className="space-y-6">
+                  {/* Switch para Activar/Desactivar Bot */}
+                  <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-100">
+                    <div>
+                      <p className="font-bold text-gray-900">Bot IA</p>
+                      <p className="text-xs text-gray-500">
+                        {aiBotEnabled 
+                          ? 'El bot responde automáticamente a tus pacientes' 
+                          : 'El bot está en pausa. Responde tú desde WhatsApp Business.'}
+                      </p>
+                    </div>
+                    <button
+                      onClick={handleToggleAiBot}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
+                        aiBotEnabled ? 'bg-blue-600' : 'bg-gray-300'
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                          aiBotEnabled ? 'translate-x-6' : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
+                  </div>
+
+                  <button
+                    onClick={handleDisconnectZavu}
+                    className="px-6 py-2.5 border border-red-200 text-red-600 rounded-xl hover:bg-red-50 transition font-medium text-sm"
+                  >
+                    Desconectar WhatsApp
+                  </button>
+                </div>
               )}
             </div>
 

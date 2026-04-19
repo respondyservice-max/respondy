@@ -29,6 +29,7 @@ export interface Business {
   google_calendar_refresh_token_encrypted?: string;
   
   // Config
+  ai_bot_enabled: boolean;
   services: string[];
   prompt_custom: string;
   

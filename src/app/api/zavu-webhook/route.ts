@@ -57,6 +57,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Business no encontrado' }, { status: 404 });
     }
 
+    // Verificar si el bot está activado
+    if (!targetBusiness.ai_bot_enabled) {
+      console.log('🔴 Bot desactivado para este negocio, ignorando mensaje');
+      return NextResponse.json({ 
+        success: true, 
+        message: 'Bot desactivado' 
+      });
+    }
+
     // 2. Obtener credenciales del cliente (decriptar)
     const zavuApiKey = decrypt(targetBusiness.zavu_api_key_encrypted);
 
