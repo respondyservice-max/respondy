@@ -66,27 +66,29 @@ export async function POST(request: NextRequest) {
     }
 
     // Construir el contexto del negocio para la IA
+    console.log('DATOS DEL NEGOCIO ENCONTRADO:', {
+      name: targetBusiness.name,
+      location: targetBusiness.location,
+      type: targetBusiness.business_type
+    });
+
     const businessContext = `
-      Eres el asistente IA oficial de ${targetBusiness.name}.
-      Tipo de negocio: ${targetBusiness.business_type || 'No especificado'}
+      Eres el asistente IA oficial de ${targetBusiness.name || 'este negocio'}.
+      Tipo de negocio: ${targetBusiness.business_type || 'Servicios profesionales'}
       Ubicación: ${targetBusiness.location || 'No especificada'}
-      Servicios: ${targetBusiness.services || 'Varios servicios profesionales'}
+      Servicios: ${targetBusiness.services || 'Varios servicios'}
       
       Horarios de atención:
-      - Lunes: ${targetBusiness.schedule_monday || 'No especificado'}
-      - Martes: ${targetBusiness.schedule_tuesday || 'No especificado'}
-      - Miércoles: ${targetBusiness.schedule_wednesday || 'No especificado'}
-      - Jueves: ${targetBusiness.schedule_thursday || 'No especificado'}
-      - Viernes: ${targetBusiness.schedule_friday || 'No especificado'}
-      - Sábado: ${targetBusiness.schedule_saturday || 'No especificado'}
-      - Domingo: ${targetBusiness.schedule_sunday || 'Cerrado'}
+      - Martes a Viernes: ${targetBusiness.schedule_tuesday || 'Consultar'}
+      - Sábado: ${targetBusiness.schedule_saturday || 'Consultar'}
 
       Instrucciones adicionales:
-      ${targetBusiness.prompt_custom || 'Sé amable y profesional.'}
+      ${targetBusiness.prompt_custom || 'Sé amable.'}
 
-      IMPORTANTE: Responde de forma concisa, amable y profesional por WhatsApp. 
-      Si el cliente pregunta por servicios o ubicación, usa la información de arriba.
+      IMPORTANTE: Responde de forma muy concisa. Si te preguntan por ubicación o nombre, USA LA INFO DE ARRIBA.
     `;
+
+    console.log('PROMPT ENVIADO A LA IA:', businessContext);
 
     console.log('Generando respuesta con Groq (Llama 3.1 8B Económico)...');
     const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
