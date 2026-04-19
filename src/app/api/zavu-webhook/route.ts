@@ -10,10 +10,10 @@ export async function POST(request: NextRequest) {
     console.log('--- NUEVO MENSAJE DE ZAVU ---');
     console.log('Data recibida:', JSON.stringify(data, null, 2));
     
-    // data.sender_id viene de Zavu
-    const senderIdFromZavu = data.sender_id;
-    const messageText = data.text;
-    const phoneFrom = data.from;
+    // Ajustamos la extracción para que coincida exactamente con lo que envía Zavu
+    const senderIdFromZavu = data.senderId; // Viene en la raíz
+    const messageText = data.data?.text;    // Viene dentro del objeto data
+    const phoneFrom = data.data?.from;      // Viene dentro del objeto data
 
     if (!senderIdFromZavu || !messageText) {
       console.log('Falta sender_id o texto en el mensaje');
