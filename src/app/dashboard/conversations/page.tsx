@@ -88,7 +88,15 @@ export default function ConversationsPage() {
     if (!selectedPhone) return [];
     return conversations
       .filter(c => c.phone_from === selectedPhone)
-      .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+      .sort((a, b) => {
+        const timeA = new Date(a.timestamp).getTime();
+        const timeB = new Date(b.timestamp).getTime();
+        
+        if (timeA !== timeB) return timeA - timeB;
+        
+        // Si la hora es igual, el 'incoming' (cliente) va antes que el 'outgoing' (bot)
+        return a.message_type === 'incoming' ? -1 : 1;
+      });
   }, [conversations, selectedPhone]);
 
   if (loading) {
