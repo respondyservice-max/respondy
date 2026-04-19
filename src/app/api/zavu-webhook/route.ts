@@ -9,7 +9,7 @@ export async function POST(request: NextRequest) {
     const data = await request.json();
     console.log('--- NUEVO MENSAJE DE ZAVU ---');
     console.log('Data recibida:', JSON.stringify(data, null, 2));
-    
+
     // Ajustamos la extracción para que coincida exactamente con lo que envía Zavu
     const senderIdFromZavu = data.senderId; // Viene en la raíz
     const messageText = data.data?.text;    // Viene dentro del objeto data
@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
       try {
         if (!business.zavu_sender_id_encrypted) continue;
         const decryptedSenderId = decrypt(business.zavu_sender_id_encrypted);
-        
+
         if (decryptedSenderId === senderIdFromZavu) {
           targetBusiness = business;
           console.log('Negocio encontrado:', business.name);
@@ -59,36 +59,43 @@ export async function POST(request: NextRequest) {
 
     // 2. Obtener credenciales del cliente (decriptar)
     const zavuApiKey = decrypt(targetBusiness.zavu_api_key_encrypted);
-    
-    // 3. Procesar con Gemini (usando prompt del cliente)
-    console.log('Generando respuesta con Gemini 1.5 Flash (v1)...');
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [
-                {
-                  text: `${targetBusiness.prompt_custom || 'Responde como un asistente amable.'}\n\nMensaje del cliente: "${messageText}"`,
-                },
-              ],
-            },
-          ],
-        }),
-      }
-    );
 
-    const geminiData = await response.json();
-    
-    if (geminiData.error) {
-      console.error('ERROR DE GEMINI API:', JSON.stringify(geminiData.error, null, 2));
+    // 3. Procesar con Groq (Súper rápido y estable)
+    if (!process.env.GROQ_API_KEY) {
+      console.error('ERROR CRÍTICO: La variable GROQ_API_KEY no está configurada en Vercel.');
     }
 
-    const botResponse = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || 'Lo siento, no pude procesar tu mensaje.';
-    console.log('Respuesta de IA generada:', botResponse);
+    console.log('Generando respuesta con Groq (Llama 3 70B)...');
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.GROQ_API_KEY || ''}`,
+      },
+      body: JSON.stringify({
+        model: 'llama3-70b-8192',
+        messages: [
+          {
+            role: 'system',
+            content: `${targetBusiness.prompt_custom || 'Eres un asistente amable.'}`
+          },
+          {
+            role: 'user',
+            content: messageText
+          }
+        ],
+        temperature: 0.7,
+      }),
+    });
+
+    const groqData = await response.json();
+    
+    if (groqData.error) {
+      console.error('ERROR DE GROQ API:', JSON.stringify(groqData.error, null, 2));
+    }
+
+    const botResponse = groqData.choices?.[0]?.message?.content || 'Lo siento, tuve un problema al procesar tu mensaje.';
+    console.log('Respuesta de Groq generada:', botResponse);
 
     // 4. Responder usando credenciales del cliente
     console.log('Enviando respuesta a Zavu (v1) para:', phoneFrom);
