@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
       console.error('ERROR CRÍTICO: La variable GROQ_API_KEY no está configurada en Vercel.');
     }
 
-    console.log('Generando respuesta con Groq (Llama 3 70B)...');
+    console.log('Generando respuesta con Groq (Llama 3.1 8B Económico)...');
     const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -73,7 +73,7 @@ export async function POST(request: NextRequest) {
         'Authorization': `Bearer ${process.env.GROQ_API_KEY || ''}`,
       },
       body: JSON.stringify({
-        model: 'llama3-70b-8192',
+        model: 'llama-3.1-8b-instant',
         messages: [
           {
             role: 'system',
@@ -89,7 +89,7 @@ export async function POST(request: NextRequest) {
     });
 
     const groqData = await response.json();
-    
+
     if (groqData.error) {
       console.error('ERROR DE GROQ API:', JSON.stringify(groqData.error, null, 2));
     }
