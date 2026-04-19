@@ -61,9 +61,9 @@ export async function POST(request: NextRequest) {
     const zavuApiKey = decrypt(targetBusiness.zavu_api_key_encrypted);
     
     // 3. Procesar con Gemini (usando prompt del cliente)
-    console.log('Generando respuesta con Gemini 1.5 Flash (URL FIJA V1)...');
+    console.log('Generando respuesta con Gemini 1.5 Pro (Nivel Máximo)...');
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro:generateContent?key=${process.env.GEMINI_API_KEY}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
