@@ -7,32 +7,47 @@ import { decrypt } from '@/lib/crypto';
 export async function POST(request: NextRequest) {
   try {
     const data = await request.json();
+    console.log('--- NUEVO MENSAJE DE ZAVU ---');
+    console.log('Data recibida:', JSON.stringify(data, null, 2));
     
     // data.sender_id viene de Zavu
     const senderIdFromZavu = data.sender_id;
     const messageText = data.text;
     const phoneFrom = data.from;
 
+    if (!senderIdFromZavu || !messageText) {
+      console.log('Falta sender_id o texto en el mensaje');
+      return NextResponse.json({ error: 'Data incompleta' }, { status: 400 });
+    }
+
     // 1. Encontrar business por sender_id encriptado
-    const { data: businesses } = await supabaseAdmin
+    console.log('Buscando negocio para sender_id:', senderIdFromZavu);
+    const { data: businesses, error: dbError } = await supabaseAdmin
       .from('businesses')
       .select('*');
+
+    if (dbError) {
+      console.error('Error al consultar negocios en DB:', dbError);
+    }
 
     let targetBusiness = null;
     for (const business of businesses || []) {
       try {
         if (!business.zavu_sender_id_encrypted) continue;
         const decryptedSenderId = decrypt(business.zavu_sender_id_encrypted);
+        
         if (decryptedSenderId === senderIdFromZavu) {
           targetBusiness = business;
+          console.log('Negocio encontrado:', business.name);
           break;
         }
-      } catch {
-        // Ignorar errors de decriptación
+      } catch (err) {
+        console.error('Error al decriptar sender_id para negocio:', business.name);
       }
     }
 
     if (!targetBusiness) {
+      console.log('No se encontró ningún negocio con ese Sender ID');
       return NextResponse.json({ error: 'Business no encontrado' }, { status: 404 });
     }
 
