@@ -78,17 +78,22 @@ export async function POST(request: NextRequest) {
     const botResponse = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || 'Lo siento, no pude procesar tu mensaje.';
 
     // 4. Responder usando credenciales del cliente
-    await fetch('https://api.zavu.dev/messages/send', {
+    console.log('Enviando respuesta a Zavu (v1) para:', phoneFrom);
+    const responseToZavu = await fetch('https://api.zavu.dev/v1/messages', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${zavuApiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
+        senderId: senderIdFromZavu, // Vital para que Zavu sepa cuál número usar
         to: phoneFrom,
         text: botResponse,
       }),
     });
+
+    const zavuResult = await responseToZavu.json();
+    console.log('Resultado de Zavu API:', responseToZavu.status, JSON.stringify(zavuResult, null, 2));
 
     // 5. Guardar conversación
     await supabaseAdmin
