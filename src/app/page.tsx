@@ -208,6 +208,10 @@ export default function Landing() {
             <a href="mailto:soporte@respondy.cl" className="text-blue-400 hover:text-blue-300 transition">
               soporte@respondy.cl
             </a>
+            {" | "}
+            <Link href="/privacy" className="text-gray-500 hover:text-blue-400 transition">Política de Privacidad</Link>
+            {" | "}
+            <Link href="/terms" className="text-gray-500 hover:text-blue-400 transition">Términos del Servicio</Link>
           </p>
         </div>
       </footer>
