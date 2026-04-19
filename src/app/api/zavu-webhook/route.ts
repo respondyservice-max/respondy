@@ -55,8 +55,9 @@ export async function POST(request: NextRequest) {
     const zavuApiKey = decrypt(targetBusiness.zavu_api_key_encrypted);
     
     // 3. Procesar con Gemini (usando prompt del cliente)
+    console.log('Generando respuesta con Gemini 1.5 Flash...');
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key=${process.env.GEMINI_API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -65,7 +66,7 @@ export async function POST(request: NextRequest) {
             {
               parts: [
                 {
-                  text: `${targetBusiness.prompt_custom}\n\nMensaje del cliente: "${messageText}"`,
+                  text: `${targetBusiness.prompt_custom || 'Responde como un asistente amable.'}\n\nMensaje del cliente: "${messageText}"`,
                 },
               ],
             },
@@ -75,7 +76,13 @@ export async function POST(request: NextRequest) {
     );
 
     const geminiData = await response.json();
+    
+    if (geminiData.error) {
+      console.error('ERROR DE GEMINI API:', JSON.stringify(geminiData.error, null, 2));
+    }
+
     const botResponse = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || 'Lo siento, no pude procesar tu mensaje.';
+    console.log('Respuesta de IA generada:', botResponse);
 
     // 4. Responder usando credenciales del cliente
     console.log('Enviando respuesta a Zavu (v1) para:', phoneFrom);
