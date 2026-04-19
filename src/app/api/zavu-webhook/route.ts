@@ -15,6 +15,12 @@ export async function POST(request: NextRequest) {
     const messageText = data.data?.text;    // Viene dentro del objeto data
     const phoneFrom = data.data?.from;      // Viene dentro del objeto data
 
+    // Solo procesamos mensajes entrantes (ignoramos confirmaciones de lectura/entrega)
+    if (data.type !== 'message.inbound') {
+      console.log('Ignorando evento tipo:', data.type);
+      return NextResponse.json({ success: true, ignored: true });
+    }
+
     if (!senderIdFromZavu || !messageText) {
       console.log('Falta sender_id o texto en el mensaje');
       return NextResponse.json({ error: 'Data incompleta' }, { status: 400 });
@@ -55,9 +61,9 @@ export async function POST(request: NextRequest) {
     const zavuApiKey = decrypt(targetBusiness.zavu_api_key_encrypted);
     
     // 3. Procesar con Gemini (usando prompt del cliente)
-    console.log('Generando respuesta con Gemini 1.5 Flash...');
+    console.log('Generando respuesta con Gemini 1.5 Flash (v1)...');
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
