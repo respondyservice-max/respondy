@@ -65,6 +65,29 @@ export async function POST(request: NextRequest) {
       console.error('ERROR CRÍTICO: La variable GROQ_API_KEY no está configurada en Vercel.');
     }
 
+    // Construir el contexto del negocio para la IA
+    const businessContext = `
+      Eres el asistente IA oficial de ${targetBusiness.name}.
+      Tipo de negocio: ${targetBusiness.business_type || 'No especificado'}
+      Ubicación: ${targetBusiness.location || 'No especificada'}
+      Servicios: ${targetBusiness.services || 'Varios servicios profesionales'}
+      
+      Horarios de atención:
+      - Lunes: ${targetBusiness.schedule_monday || 'No especificado'}
+      - Martes: ${targetBusiness.schedule_tuesday || 'No especificado'}
+      - Miércoles: ${targetBusiness.schedule_wednesday || 'No especificado'}
+      - Jueves: ${targetBusiness.schedule_thursday || 'No especificado'}
+      - Viernes: ${targetBusiness.schedule_friday || 'No especificado'}
+      - Sábado: ${targetBusiness.schedule_saturday || 'No especificado'}
+      - Domingo: ${targetBusiness.schedule_sunday || 'Cerrado'}
+
+      Instrucciones adicionales:
+      ${targetBusiness.prompt_custom || 'Sé amable y profesional.'}
+
+      IMPORTANTE: Responde de forma concisa, amable y profesional por WhatsApp. 
+      Si el cliente pregunta por servicios o ubicación, usa la información de arriba.
+    `;
+
     console.log('Generando respuesta con Groq (Llama 3.1 8B Económico)...');
     const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
@@ -77,7 +100,7 @@ export async function POST(request: NextRequest) {
         messages: [
           {
             role: 'system',
-            content: `${targetBusiness.prompt_custom || 'Eres un asistente amable.'}`
+            content: businessContext
           },
           {
             role: 'user',
