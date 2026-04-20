@@ -161,16 +161,19 @@ export async function POST(request: NextRequest) {
       let finalDate = parsed.date;
       let finalTime = parsed.time;
       let finalService = parsed.service || 'Consulta';
-      let patientName = parsed.patientName || `Paciente (${phoneFrom})`;
+      let patientName = parsed.patientName;
 
       // Si el mensaje del usuario no tenía fecha o hora (ej: "sí, confirmo"),
       // intentamos extraerlos de la respuesta de confirmación del bot
-      if (!finalDate || !finalTime) {
+      if (!finalDate || !finalTime || !patientName) {
         const botParsed = parseClientMessage(botResponse);
         finalDate = finalDate || botParsed.date;
         finalTime = finalTime || botParsed.time;
         finalService = parsed.service || botParsed.service || 'Consulta';
+        patientName = patientName || botParsed.patientName;
       }
+      
+      patientName = patientName || `Paciente (${phoneFrom})`;
 
       if (finalDate && finalTime) {
         const eventResult = await createCalendarEvent(targetBusiness, {

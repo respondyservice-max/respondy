@@ -278,11 +278,23 @@ export function parseClientMessage(text: string): ParsedAppointment {
     }
   }
 
-  // Detectar nombre del paciente (heurística básica)
+  // Detectar nombre del paciente (heurística básica o lectura del formato IA)
   let patientName: string | null = null;
+  const nameMatchFormatted = text.match(/paciente:\s*([A-Za-zÁÉÍÓÚáéíóúÑñ ]+?)(?:,|$|\n)/i);
   const nameMatch = text.match(/me llamo ([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?: [A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)?)/i)
     || text.match(/soy ([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?: [A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)?)/i);
-  if (nameMatch) patientName = nameMatch[1];
+  
+  if (nameMatchFormatted) {
+    patientName = nameMatchFormatted[1].trim();
+  } else if (nameMatch) {
+    patientName = nameMatch[1].trim();
+  }
+
+  // Detectar servicio en el formato IA si está presente ("Servicio: Limpieza")
+  const serviceMatchFormatted = text.match(/servicio:\s*([A-Za-zÁÉÍÓÚáéíóúÑñ ]+?)(?:,|$|\n)/i);
+  if (serviceMatchFormatted) {
+    service = serviceMatchFormatted[1].trim();
+  }
 
   return { service, date, time, patientName };
 }
@@ -334,7 +346,9 @@ DISPONIBILIDAD EN VIVO - ${availability.date_label}:
 ${slotStatus}
 
 REGLAS CRÍTICAS:
-1. Si la hora pedida está LIBRE → responde EXACTAMENTE con este formato: "✓ Cita agendada para [día] a las [hora]."
+1. Si la hora pedida está LIBRE y tienes el nombre del paciente → responde EXACTAMENTE con este formato, sin excepciones:
+   "✓ Cita agendada. Paciente: [Nombre Apellido], Día: [día], Hora: [hora], Servicio: [servicio]."
+   (Si no tienes el nombre, pide el nombre primero antes de confirmar).
 2. Si la hora pedida está OCUPADA → di: "Esa hora no está disponible. Tengo libre: [lista alternativas]"
 3. Si no mencionan hora → pregunta qué hora prefieren y muéstrales las disponibles.
 4. NUNCA confirmes una cita en una hora que aparece como OCUPADA.

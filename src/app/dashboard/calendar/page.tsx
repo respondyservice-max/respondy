@@ -60,10 +60,27 @@ export default function CalendarPage() {
   }, [router]);
 
   const handleDelete = async (id: string) => {
-    if (!confirm('¿Cancelar esta cita?')) return;
+    if (!confirm('¿Cancelar esta cita? (También se eliminará de Google Calendar)')) return;
 
-    await supabase.from('appointments').delete().eq('id', id);
-    setAppointments(appointments.filter((a) => a.id !== id));
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      
+      const res = await fetch('/api/calendar/delete-event', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ appointment_id: id })
+      });
+
+      if (!res.ok) throw new Error('Error al cancelar');
+      setAppointments(appointments.filter((a) => a.id !== id));
+    } catch (e) {
+      alert('Hubo un error al intentar cancelar la cita. Revisa la consola.');
+      console.error(e);
+    }
   };
 
   if (loading) {
