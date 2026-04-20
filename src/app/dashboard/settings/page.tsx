@@ -386,7 +386,7 @@ export default function Settings() {
                     value={form.location}
                     onChange={(e) => setForm({ ...form, location: e.target.value })}
                     placeholder="Escribe tu dirección o búscala aquí..."
-                    className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                    className="w-full px-4 py-3 border-2 border-blue-500 ring-2 ring-blue-100 rounded-xl focus:ring-4 focus:ring-blue-600 focus:border-transparent transition"
                   />
                 </div>
 
