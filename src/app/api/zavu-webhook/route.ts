@@ -73,13 +73,31 @@ export async function POST(request: NextRequest) {
 
     const zavuApiKey = decrypt(targetBusiness.zavu_api_key_encrypted);
 
-    // ── 2. Parsear el mensaje del cliente ────────────────────────────────────
-    const parsed = parseClientMessage(messageText);
-    console.log('Intención detectada:', parsed);
+    // ── 2. Obtener historial para parseo enriquecido ─────────────────────────
+    const { data: previousMessages } = await supabaseAdmin
+      .from('conversations')
+      .select('message_type, message_text')
+      .eq('business_id', targetBusiness.id)
+      .eq('phone_from', phoneFrom)
+      .order('created_at', { ascending: false })
+      .limit(8);
+
+    // Combinar los últimos 4 mensajes del USUARIO para parsear con contexto completo
+    const recentUserMessages = (previousMessages || [])
+      .filter(m => m.message_type === 'incoming')
+      .slice(0, 4)
+      .map(m => m.message_text)
+      .reverse();
+    const combinedContext = [...recentUserMessages, messageText].join(' ');
+    console.log('Contexto combinado para parseo:', combinedContext);
+
+    // ── 3. Parsear con contexto enriquecido ───────────────────────────────────
+    const parsed = parseClientMessage(combinedContext);
+    console.log('Intención detectada (contexto combinado):', parsed);
 
     // ── 3. Verificar disponibilidad si hay fecha/hora ─────────────────────────
     let availability = null;
-    let requestedSlot = parsed.time;
+    const requestedSlot = (parsed.date && parsed.time) ? { date: parsed.date, time: parsed.time } : null;
 
     const hasCalendar = !!targetBusiness.google_calendar_access_token_encrypted;
     const isAppointmentRequest = !!(parsed.date && (parsed.service || parsed.time));
@@ -130,15 +148,6 @@ export async function POST(request: NextRequest) {
     if (!process.env.GROQ_API_KEY) {
       console.error('ERROR CRÍTICO: GROQ_API_KEY no está configurada.');
     }
-
-    // Obtener historial de conversación para darle contexto a la IA (memoria a corto plazo)
-    const { data: previousMessages } = await supabaseAdmin
-      .from('conversations')
-      .select('message_type, message_text')
-      .eq('business_id', targetBusiness.id)
-      .eq('phone_from', phoneFrom)
-      .order('created_at', { ascending: false })
-      .limit(6); // Recordar últimos 6 mensajes
 
     const chatHistory = (previousMessages || [])
       .reverse()

@@ -393,13 +393,28 @@ export function createDynamicPrompt(
   const currentDate = new Date().toLocaleDateString('es-CL', {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
   });
+
+  // Construir resumen del horario semanal desde el JSON inteligente
+  let scheduleText = '';
+  if (business.weekly_schedule) {
+    const ws = business.weekly_schedule;
+    const days = ['lunes','martes','miercoles','jueves','viernes','sabado','domingo'];
+    const dayNames: Record<string, string> = { lunes:'Lunes', martes:'Martes', miercoles:'Miércoles', jueves:'Jueves', viernes:'Viernes', sabado:'Sábado', domingo:'Domingo' };
+    scheduleText = days
+      .map(d => ws[d] ? (ws[d].active ? `${dayNames[d]}: ${ws[d].open} - ${ws[d].close}` : `${dayNames[d]}: CERRADO`) : '')
+      .filter(Boolean)
+      .join(', ');
+  } else {
+    scheduleText = `Lunes a Viernes ${business.schedule_monday || '9AM-6PM'}, Sábados ${business.schedule_saturday || '9AM-1PM'}`;
+  }
+
   const baseContext = `
 Eres el asistente IA oficial de ${business.name || 'este negocio'}.
 Fecha actual: ${currentDate}
 Tipo de negocio: ${business.business_type || 'Servicios profesionales'}
 Ubicación exacta: ${business.location || 'No especificada'}
 Servicios disponibles: ${Array.isArray(business.services) ? business.services.join(', ') : business.services || 'Varios servicios'}
-Horarios: Lunes a Viernes ${business.schedule_monday || '9AM-6PM'}, Sábados ${business.schedule_saturday || '9AM-1PM'}
+Horario de atención: ${scheduleText}
 
 ${business.prompt_custom ? `Instrucciones especiales: ${business.prompt_custom}` : ''}
 `.trim();
@@ -413,18 +428,20 @@ REGLAS:
 3. Sé conciso y amable.`;
   }
 
-  const occupiedText = availability.occupied_times.length > 0
-    ? availability.occupied_times.join(', ')
-    : 'ninguno';
-  const availableText = availability.available_slots.length > 0
-    ? availability.available_slots.join(', ')
-    : 'no hay horarios disponibles';
+  const isClosed = availability.occupied_times.includes('CERRADO');
+  const occupiedText = isClosed ? 'Este día está CERRADO por configuración del horario.' : (availability.occupied_times.length > 0 ? availability.occupied_times.join(', ') : 'ninguno');
+  const availableText = isClosed ? 'No hay horas disponibles (día cerrado).' : (availability.available_slots.length > 0 ? availability.available_slots.join(', ') : 'no hay horarios disponibles');
 
-  const slotStatus = requestedSlot
-    ? availability.available_slots.includes(requestedSlot)
-      ? `La hora solicitada (${requestedSlot}) ESTÁ LIBRE.`
-      : `La hora solicitada (${requestedSlot}) está OCUPADA.`
-    : '';
+  let slotStatus = '';
+  if (isClosed) {
+    slotStatus = `⚠️ ESTE DÍA ESTÁ CERRADO. No hay horarios disponibles. Debes informarle al paciente que ese día no atendemos y ofrecerle otro día.`;
+  } else if (requestedSlot && requestedSlot.time) {
+    const reqTime = requestedSlot.time;
+    const isSlotFree = availability.available_slots.includes(reqTime);
+    slotStatus = isSlotFree
+      ? `✅ La hora solicitada (${reqTime}) ESTÁ LIBRE. Puedes confirmar la cita.`
+      : `❌ La hora solicitada (${reqTime}) está OCUPADA o fuera del horario de atención. NO puedes confirmar esa hora.`;
+  }
 
   return `${baseContext}
 
