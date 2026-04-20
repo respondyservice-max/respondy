@@ -163,7 +163,7 @@ export default function Settings() {
     }
   };
 
-  // Alternar Bot IA
+  // Alternar Agente IA
   const handleToggleAiBot = async () => {
     const newValue = !aiBotEnabled;
     setAiBotEnabled(newValue);
@@ -178,9 +178,9 @@ export default function Settings() {
         .eq('user_id', user.id);
 
       if (error) {
-        console.error('Error al actualizar Bot IA:', error);
+        console.error('Error al actualizar Agente IA:', error);
         setAiBotEnabled(!newValue); // Revertir si falló
-        alert('Error al actualizar el estado del bot');
+        alert('Error al actualizar el estado del agente');
       }
     } catch (error) {
       console.error('Error:', error);
@@ -393,14 +393,14 @@ export default function Settings() {
 
             {/* Prompt */}
             <div className="bg-white rounded-xl p-6 sm:p-8 shadow-sm border border-gray-100">
-              <h2 className="text-lg font-bold mb-2 text-gray-900">Prompt del bot IA</h2>
+              <h2 className="text-lg font-bold mb-2 text-gray-900">Prompt del agente IA</h2>
               <p className="text-sm text-gray-500 mb-5">
                 Personaliza cómo responde tu IA. Ejemplo: &quot;Soy asistente de Clínica Smile...&quot;
               </p>
               <textarea
                 value={form.prompt_custom}
                 onChange={(e) => setForm({ ...form, prompt_custom: e.target.value })}
-                placeholder="Escribe aquí las instrucciones exactas para tu bot..."
+                placeholder="Escribe aquí las instrucciones exactas para tu agente..."
                 rows={6}
                 className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
               />
@@ -435,7 +435,7 @@ export default function Settings() {
               <div className="flex justify-between items-start mb-5">
                 <div>
                   <h2 className="text-lg font-bold text-gray-900">📱 WhatsApp (Zavu)</h2>
-                  <p className="text-sm text-gray-500 mt-1">Conecta tu cuenta de Zavu para activar el bot</p>
+                  <p className="text-sm text-gray-500 mt-1">Conecta tu cuenta de Zavu para activar el agente</p>
                 </div>
                 {zavuConnected ? (
                   <span className="bg-green-50 text-green-700 px-3 py-1.5 rounded-full text-sm font-semibold flex items-center gap-2 border border-green-200">
@@ -500,31 +500,7 @@ export default function Settings() {
                   </button>
                 </form>
               ) : (
-                <div className="space-y-6">
-                  {/* Switch para Activar/Desactivar Bot */}
-                  <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-100">
-                    <div>
-                      <p className="font-bold text-gray-900">Bot IA</p>
-                      <p className="text-xs text-gray-500">
-                        {aiBotEnabled 
-                          ? 'El bot responde automáticamente a tus pacientes' 
-                          : 'El bot está en pausa. Responde tú desde WhatsApp Business.'}
-                      </p>
-                    </div>
-                    <button
-                      onClick={handleToggleAiBot}
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
-                        aiBotEnabled ? 'bg-blue-600' : 'bg-gray-300'
-                      }`}
-                    >
-                      <span
-                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                          aiBotEnabled ? 'translate-x-6' : 'translate-x-1'
-                        }`}
-                      />
-                    </button>
-                  </div>
-
+                <div className="space-y-6 pt-4">
                   <button
                     onClick={handleDisconnectZavu}
                     className="px-6 py-2.5 border border-red-200 text-red-600 rounded-xl hover:bg-red-50 transition font-medium text-sm"

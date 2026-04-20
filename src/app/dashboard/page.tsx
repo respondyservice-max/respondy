@@ -18,6 +18,8 @@ export default function Dashboard() {
     conversations: 0,
   });
 
+  const [aiBotEnabled, setAiBotEnabled] = useState(true);
+
   useEffect(() => {
     const fetchBusiness = async () => {
       try {
@@ -40,6 +42,7 @@ export default function Dashboard() {
         }
 
         setBusiness(data);
+        setAiBotEnabled(data.ai_bot_enabled !== false);
 
         // Fetch stats
         const { count: conversations } = await supabase
@@ -67,6 +70,30 @@ export default function Dashboard() {
 
     fetchBusiness();
   }, [router]);
+
+  const handleToggleAiBot = async () => {
+    const newValue = !aiBotEnabled;
+    setAiBotEnabled(newValue);
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { error } = await supabase
+        .from('businesses')
+        .update({ ai_bot_enabled: newValue })
+        .eq('user_id', user.id);
+
+      if (error) {
+        console.error('Error al actualizar Bot IA:', error);
+        setAiBotEnabled(!newValue); // Revertir si falló
+        alert('Error al actualizar el estado del bot');
+      }
+    } catch (error) {
+      console.error('Error:', error);
+      setAiBotEnabled(!newValue);
+    }
+  };
 
   if (loading) {
     return (
@@ -108,7 +135,7 @@ export default function Dashboard() {
               <div>
                 <h3 className="font-semibold text-yellow-900">⚠️ Configuración pendiente</h3>
                 <p className="text-yellow-800 text-sm mt-1">
-                  Necesitas conectar tu Zavu para que el bot funcione.{' '}
+                  Necesitas conectar tu Zavu para que el agente funcione.{' '}
                   <a href="/dashboard/settings" className="underline font-semibold hover:text-yellow-900 transition">
                     Ir a configuración →
                   </a>
@@ -117,26 +144,54 @@ export default function Dashboard() {
             </div>
           </div>
         ) : (
-          <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 p-5 mb-8 rounded-xl">
-            <div className="flex gap-3">
-              <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
-              <div>
-                <h3 className="font-semibold text-green-900">✅ Bot activo</h3>
-                <p className="text-green-800 text-sm mt-1">
-                  Tu bot de WhatsApp está funcionando correctamente.
-                </p>
+          <div className={`bg-gradient-to-r ${aiBotEnabled ? 'from-green-50 to-emerald-50 border-green-200' : 'from-gray-50 to-slate-100 border-gray-200'} border p-5 mb-8 rounded-xl transition-all duration-300`}>
+            <div className="flex justify-between items-start">
+              <div className="flex gap-3">
+                {aiBotEnabled ? (
+                  <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
+                ) : (
+                  <AlertCircle className="w-5 h-5 text-gray-400 flex-shrink-0 mt-0.5" />
+                )}
+                <div>
+                  <h3 className={`font-semibold ${aiBotEnabled ? 'text-green-900' : 'text-gray-700'}`}>
+                    {aiBotEnabled ? '✅ Agente IA' : '⚪ Agente IA (Pausado)'}
+                  </h3>
+                  <p className={`${aiBotEnabled ? 'text-green-800' : 'text-gray-500'} text-sm mt-1`}>
+                    {aiBotEnabled 
+                      ? 'Tu agente de WhatsApp está funcionando correctamente.'
+                      : 'El agente está desactivado. No responderá mensajes automáticamente.'}
+                  </p>
+                </div>
+              </div>
+              
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-medium text-gray-600">
+                  {aiBotEnabled ? 'Encendido' : 'Apagado'}
+                </span>
+                <button
+                  onClick={handleToggleAiBot}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
+                    aiBotEnabled ? 'bg-green-600' : 'bg-gray-300'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      aiBotEnabled ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
               </div>
             </div>
           </div>
         )}
 
         {/* Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
           <StatCard
-            title="Conversaciones"
-            value={stats.conversations}
+            title="Mensajes (Enviados y recibidos)"
+            value={`${stats.conversations} / 2000`}
             icon={<MessageSquare className="w-6 h-6 text-blue-600" />}
-            subtitle="este mes"
+            subtitle="Plan mensual"
             color="blue"
           />
           <StatCard
@@ -145,17 +200,6 @@ export default function Dashboard() {
             icon={<Clock className="w-6 h-6 text-emerald-600" />}
             subtitle="este mes"
             color="emerald"
-          />
-          <StatCard
-            title="Tasa de conversión"
-            value={
-              stats.conversations > 0
-                ? Math.round((stats.appointments / stats.conversations) * 100)
-                : 0
-            }
-            icon={<TrendingUp className="w-6 h-6 text-purple-600" />}
-            subtitle="%"
-            color="purple"
           />
         </div>
 
@@ -198,7 +242,7 @@ function StatCard({
   color,
 }: {
   title: string;
-  value: number;
+  value: number | string;
   icon: React.ReactNode;
   subtitle: string;
   color: string;
