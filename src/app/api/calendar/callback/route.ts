@@ -29,11 +29,24 @@ export async function GET(request: NextRequest) {
     // Obtener info del calendar
     const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
     const { data: calendarList } = await calendar.calendarList.list();
-    
-    const primaryCalendar = calendarList.items?.[0];
+
+    console.log('📋 Calendars disponibles:');
+    calendarList.items?.forEach((cal, idx) => {
+      console.log(`${idx}: ${cal.summary} (primary: ${cal.primary})`);
+    });
+
+    // Obtener SOLO el calendar principal (primary = true), no feriados
+    const primaryCalendar = calendarList.items?.find(cal => cal.primary === true)
+      || calendarList.items?.find(cal => cal.summary && !cal.summary.toLowerCase().includes('feriado'))
+      || calendarList.items?.[1]; // fallback: segundo si el primero es feriados
+
     if (!primaryCalendar) {
-      throw new Error('No se encontró calendar');
+      console.error('❌ No se encontró calendar principal');
+      console.error('Calendars encontrados:', calendarList.items?.map(c => ({ summary: c.summary, primary: c.primary })));
+      throw new Error('No se encontró calendar principal.');
     }
+
+    console.log('✅ Calendar principal encontrado:', primaryCalendar.summary);
 
     if (!tokens.access_token) {
       throw new Error('No access token received');
