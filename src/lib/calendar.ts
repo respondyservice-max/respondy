@@ -344,7 +344,10 @@ REGLAS CRÍTICAS:
 // ─── 6. Detectar si el bot confirmó una cita ─────────────────────────────────
 
 export function extractConfirmation(botResponse: string): boolean {
-  return botResponse.includes('✓ Cita agendada') || botResponse.includes('✓ cita agendada');
+  const lower = botResponse.toLowerCase();
+  return lower.includes('✓ cita agendada') || 
+         lower.includes('cita agendada para el') ||
+         lower.includes('cita confirmada');
 }
 
 // ─── Utilidades internas ─────────────────────────────────────────────────────
