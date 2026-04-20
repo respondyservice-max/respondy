@@ -361,20 +361,29 @@ export function parseClientMessage(text: string): ParsedAppointment {
     }
   }
 
-  // Detectar nombre del paciente (heurística básica o lectura del formato IA)
+  // Detectar nombre del paciente
   let patientName: string | null = null;
-  const nameMatchFormatted = text.match(/paciente:\s*([A-Za-zÁÉÍÓÚáéíóúÑñ ]+?)(?:,|$|\n)/i);
-  const nameMatch = text.match(/me llamo ([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?: [A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)?)/i)
-    || text.match(/soy ([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?: [A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)?)/i);
+  const nameMatchFormatted = text.match(/paciente:\s*([A-Za-z\u00C0-\u024F ]+?)(?:,|$|\n)/i);
+  const nameMatchPrefix = text.match(/(?:me llamo|soy|nombre[:\s]+)\s+([A-Z\u00C0-\u024F][a-z\u00C0-\u024F]+(?:\s+[A-Z\u00C0-\u024F][a-z\u00C0-\u024F]+)?)/i);
+  // Detectar nombre bare: dos palabras capitalizadas consecutivas que NO sean días/meses/servicios
+  const ignoreWords = new Set(['Fecha','Hora','Servicio','Limpieza','Jueves','Lunes','Martes','Miércoles','Miercoles','Viernes','Sábado','Sabado','Domingo','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Hola','Pedro','Quiero','Necesito','Buenos']);
+  const bareNameMatch = text.match(/\b([A-ZÀ-ÖØ-Þ][a-zÀ-öø-ÿ]{1,}(?:\s+[A-ZÀ-ÖØ-Þ][a-zÀ-öø-ÿ]{1,})?)\b/);
   
   if (nameMatchFormatted) {
     patientName = nameMatchFormatted[1].trim();
-  } else if (nameMatch) {
-    patientName = nameMatch[1].trim();
+  } else if (nameMatchPrefix) {
+    patientName = nameMatchPrefix[1].trim();
+  } else if (bareNameMatch) {
+    const candidate = bareNameMatch[1].trim();
+    // Solo aceptar si tiene al menos dos palabras (nombre y apellido) o si parece un nombre propio
+    const words = candidate.split(' ');
+    if (words.length >= 2 && !ignoreWords.has(words[0])) {
+      patientName = candidate;
+    }
   }
 
   // Detectar servicio en el formato IA si está presente ("Servicio: Limpieza")
-  const serviceMatchFormatted = text.match(/servicio:\s*([A-Za-zÁÉÍÓÚáéíóúÑñ ]+?)(?:,|$|\n)/i);
+  const serviceMatchFormatted = text.match(/servicio:\s*([A-Za-z\u00C0-\u024F ]+?)(?:,|$|\n)/i);
   if (serviceMatchFormatted) {
     service = serviceMatchFormatted[1].trim();
   }
@@ -388,7 +397,8 @@ export function createDynamicPrompt(
   business: any,
   availability: AvailabilityResult | null,
   requestedSlot: { date: string; time: string | null } | null,
-  upcomingAppointments: any[] = []
+  upcomingAppointments: any[] = [],
+  collectedData?: { name?: string | null; date?: string | null; time?: string | null; service?: string | null }
 ): string {
   const currentDate = new Date().toLocaleDateString('es-CL', {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
@@ -443,12 +453,25 @@ REGLAS:
       : `❌ La hora solicitada (${reqTime}) está OCUPADA o fuera del horario de atención. NO puedes confirmar esa hora.`;
   }
 
+  // Si ya tenemos todos los datos capturados, inyectamos instrucción directa
+  const allDataReady = collectedData?.name && collectedData?.date && collectedData?.time;
+  const confirmedBlock = allDataReady ? `
+
+⚡ DATOS YA CONFIRMADOS POR EL PACIENTE (NO vuelvas a pedir estos datos):
+- Nombre: ${collectedData!.name}
+- Fecha: ${collectedData!.date}
+- Hora: ${collectedData!.time}
+- Servicio: ${collectedData!.service || 'Consulta'}
+${slotStatus.includes('LIBRE') ? 'La hora está disponible → AGENDA LA CITA AHORA con el formato exacto de la regla 1A.' : slotStatus}
+` : '';
+
   return `${baseContext}
 
 DISPONIBILIDAD EN VIVO - ${availability.date_label}:
 - Horarios OCUPADOS: ${occupiedText}
 - Horarios LIBRES: ${availableText}
 ${slotStatus}
+${confirmedBlock}
 
 ${upcomingAppointments.length > 0 ? `
 El paciente ACTUALMENTE tiene las siguientes citas programadas en tu clínica:
@@ -457,9 +480,10 @@ ${upcomingAppointments.map(a => `- ID [${a.id}]: ${a.service} el ${new Date(a.da
 ` : ''}
 
 REGLAS CRÍTICAS:
+0. NUNCA pidas datos que el paciente ya proporcionó en mensajes anteriores. Lee el historial.
 1A. Si la hora pedida está LIBRE y tienes el nombre del paciente → responde EXACTAMENTE con este formato, sin excepciones:
    "✓ Cita agendada. Paciente: [Nombre Apellido], Día: [día], Hora: [hora], Servicio: [servicio]."
-   (Si no tienes el nombre, pide el nombre primero antes de confirmar).
+   Para detectar el nombre: el paciente debe proporcionar nombre y apellido (ej: "Juan Pérez"). Si solo da un nombre, pídele el apellido.
 1B. Si el paciente pide CANCELAR una cita suya ya existente → responde EXACTAMENTE con este formato:
    "✓ Cita cancelada. ID: [id de la cita]."
 1C. Si el paciente pide REAGENDAR una cita a un nuevo horario y el nuevo horario está LIBRE → responde EXACTAMENTE con este formato:

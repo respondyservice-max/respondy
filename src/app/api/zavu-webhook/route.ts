@@ -141,7 +141,13 @@ export async function POST(request: NextRequest) {
     }
 
     // ── 4. Crear prompt dinámico para Groq ────────────────────────────────────
-    const dynamicPrompt = createDynamicPrompt(targetBusiness, availability, requestedSlot, upcomingAppointments);
+    const dynamicPrompt = createDynamicPrompt(
+      targetBusiness, 
+      availability, 
+      requestedSlot, 
+      upcomingAppointments,
+      { name: parsed.patientName, date: parsed.date, time: parsed.time, service: parsed.service }
+    );
     console.log('Prompt dinámico creado para Groq.');
 
     // ── 5. Llamar a Groq con el prompt dinámico ───────────────────────────────
