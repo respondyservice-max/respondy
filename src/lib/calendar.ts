@@ -338,25 +338,31 @@ export function parseClientMessage(text: string): ParsedAppointment {
     }
   }
 
-  // Detectar hora (ej: "5PM", "17:00", "a las 5", "5 de la tarde")
+  // Detectar hora (ej: "5PM", "17:00", "a las 5", "5 de la tarde", "9 am")
   let time: string | null = null;
-  const timeRegexes = [
-    /(\d{1,2}):(\d{2})\s*(am|pm)?/i,
-    /(\d{1,2})\s*(am|pm)/i,
-    /a las (\d{1,2})/i,
+
+  // Intentar extraer hora con múltiples patrones, del más específico al más general
+  const timePatterns: Array<{ re: RegExp; hourGrp: number; minGrp: number | null; merGrp: number | null }> = [
+    { re: /(\d{1,2}):(\d{2})\s*(am|pm)?/i, hourGrp: 1, minGrp: 2, merGrp: 3 },   // 10:30, 10:30am
+    { re: /(\d{1,2})\s*(am|pm)/i,           hourGrp: 1, minGrp: null, merGrp: 2 }, // 9am, 9 am
+    { re: /a las (\d{1,2})/i,               hourGrp: 1, minGrp: null, merGrp: null }, // a las 9
   ];
 
-  for (const regex of timeRegexes) {
-    const match = lower.match(regex);
+  for (const { re, hourGrp, minGrp, merGrp } of timePatterns) {
+    const match = lower.match(re);
     if (match) {
-      let hour = parseInt(match[1]);
-      const minutes = match[2] && match[2].length === 2 ? parseInt(match[2]) : 0;
-      const meridiem = (match[2] || match[3] || '').toLowerCase();
+      let hour = parseInt(match[hourGrp]);
+      // minGrp: solo es válido si el grupo es numérico
+      const minRaw = minGrp ? match[minGrp] : null;
+      const minutes = (minRaw && /^\d+$/.test(minRaw)) ? parseInt(minRaw) : 0;
+      const meridiem = (merGrp && match[merGrp] ? match[merGrp] : '').toLowerCase();
       if (meridiem === 'pm' && hour < 12) hour += 12;
       if (meridiem === 'am' && hour === 12) hour = 0;
       // Heurística: si no hay AM/PM y hora <= 8, asumir PM
       if (!meridiem && hour >= 1 && hour <= 8) hour += 12;
-      time = `${String(hour).padStart(2,'0')}:${String(minutes).padStart(2,'0')}`;
+      if (!isNaN(hour)) {
+        time = `${String(hour).padStart(2,'0')}:${String(minutes).padStart(2,'0')}`;
+      }
       break;
     }
   }
@@ -444,13 +450,13 @@ REGLAS:
 
   let slotStatus = '';
   if (isClosed) {
-    slotStatus = `⚠️ ESTE DÍA ESTÁ CERRADO. No hay horarios disponibles. Debes informarle al paciente que ese día no atendemos y ofrecerle otro día.`;
+    slotStatus = `[INSTRUCCIÓN INTERNA - NO repetir al usuario]: El día solicitado está CERRADO por configuración. Infórmale amablemente que no atendemos ese día y sugírele otro día disponible.`;
   } else if (requestedSlot && requestedSlot.time) {
     const reqTime = requestedSlot.time;
     const isSlotFree = availability.available_slots.includes(reqTime);
     slotStatus = isSlotFree
-      ? `✅ La hora solicitada (${reqTime}) ESTÁ LIBRE. Puedes confirmar la cita.`
-      : `❌ La hora solicitada (${reqTime}) está OCUPADA o fuera del horario de atención. NO puedes confirmar esa hora.`;
+      ? `[INSTRUCCIÓN INTERNA]: La hora solicitada (${reqTime}) ESTÁ LIBRE. Procede a confirmar la cita.`
+      : `[INSTRUCCIÓN INTERNA]: La hora solicitada (${reqTime}) está OCUPADA. Infórmale al usuario que no está disponible y oférecele las alternativas de la lista LIBRES.`;
   }
 
   // Si ya tenemos todos los datos capturados, inyectamos instrucción directa
