@@ -3,12 +3,16 @@ export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { decrypt } from '@/lib/crypto';
-import {
-  parseClientMessage,
-  checkAvailability,
-  createCalendarEvent,
-  createDynamicPrompt,
+import { 
+  checkAvailability, 
+  parseClientMessage, 
+  createDynamicPrompt, 
+  createCalendarEvent, 
   extractConfirmation,
+  extractCancellation,
+  extractReschedule,
+  deleteCalendarEvent,
+  updateCalendarEvent
 } from '@/lib/calendar';
 
 export async function POST(request: NextRequest) {
@@ -102,8 +106,24 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // ── 3.5 Buscar citas futuras del paciente ─────────────────────────────────
+    let upcomingAppointments = [];
+    try {
+      const cleanPhone = phoneFrom.replace('+', '');
+      const { data: currentAppts } = await supabaseAdmin
+        .from('appointments')
+        .select('*')
+        .eq('business_id', targetBusiness.id)
+        .gte('date_time', new Date().toISOString())
+        .ilike('patient_phone', `%${cleanPhone}%`);
+        
+      if (currentAppts) upcomingAppointments = currentAppts;
+    } catch (e) {
+      console.error('Error buscando citas del paciente', e);
+    }
+
     // ── 4. Crear prompt dinámico para Groq ────────────────────────────────────
-    const dynamicPrompt = createDynamicPrompt(targetBusiness, availability, requestedSlot);
+    const dynamicPrompt = createDynamicPrompt(targetBusiness, availability, requestedSlot, upcomingAppointments);
     console.log('Prompt dinámico creado para Groq.');
 
     // ── 5. Llamar a Groq con el prompt dinámico ───────────────────────────────
@@ -155,8 +175,39 @@ export async function POST(request: NextRequest) {
 
     console.log('Respuesta de Groq:', botResponse);
 
-    // ── 6. Si el bot confirmó la cita → crear evento en Google Calendar ────────
-    if (hasCalendar && extractConfirmation(botResponse)) {
+    // ── 6. Si el bot confirmó, canceló o reagendó ────────────────────────────
+    
+    // CASO A: REAGENDAR
+    const rescheduleData = extractReschedule(botResponse);
+    if (hasCalendar && rescheduleData) {
+      console.log('🔄 Cita reagendada por el bot...', rescheduleData);
+      const apptToMove = upcomingAppointments.find((a: any) => a.id === rescheduleData.id);
+      if (apptToMove && rescheduleData.date && rescheduleData.time) {
+        // En google
+        if (apptToMove.google_event_id) {
+          await updateCalendarEvent(targetBusiness, apptToMove.google_event_id, rescheduleData.date, rescheduleData.time);
+        }
+        // En DB
+        const startDateTime = new Date(`${rescheduleData.date}T${rescheduleData.time}:00`);
+        await supabaseAdmin.from('appointments').update({ date_time: startDateTime.toISOString() }).eq('id', apptToMove.id);
+      }
+    } 
+    // CASO B: CANCELAR
+    else if (hasCalendar && extractCancellation(botResponse)) {
+      const cancelId = extractCancellation(botResponse);
+      console.log('❌ Cita cancelada por el bot...', cancelId);
+      const apptToCancel = upcomingAppointments.find((a: any) => a.id === cancelId);
+      if (apptToCancel) {
+        // En google
+        if (apptToCancel.google_event_id) {
+          await deleteCalendarEvent(targetBusiness, apptToCancel.google_event_id);
+        }
+        // En DB
+        await supabaseAdmin.from('appointments').delete().eq('id', apptToCancel.id);
+      }
+    }
+    // CASO C: AGENDAR NUEVA
+    else if (hasCalendar && extractConfirmation(botResponse)) {
       console.log('✅ Cita confirmada por el bot. Creando evento en Google Calendar...');
       let finalDate = parsed.date;
       let finalTime = parsed.time;

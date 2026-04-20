@@ -191,9 +191,55 @@ export async function createCalendarEvent(
       eventId: event.id || undefined,
       eventLink: event.htmlLink || undefined,
     };
-  } catch (err: any) {
-    console.error('Error creando evento en Calendar:', err);
-    return { success: false, error: err.message };
+  } catch (error) {
+    console.error('Error insertando evento en Google Calendar:', error);
+    return { success: false, error: 'Failed to create event in Google Calendar' };
+  }
+}
+
+export async function deleteCalendarEvent(business: any, googleEventId: string): Promise<boolean> {
+  try {
+    const auth = await getGoogleCalendarClient(business);
+    const calendar = google.calendar({ version: 'v3', auth });
+    await calendar.events.delete({
+      calendarId: business.google_calendar_id || 'primary',
+      eventId: googleEventId,
+    });
+    return true;
+  } catch (error) {
+    console.error('Error eliminando evento de Google Calendar:', error);
+    return false;
+  }
+}
+
+export async function updateCalendarEvent(
+  business: any, 
+  googleEventId: string, 
+  newDate: string, 
+  newTime: string, 
+  durationMinutes: number = 45
+): Promise<boolean> {
+  try {
+    const auth = await getGoogleCalendarClient(business);
+    const calendar = google.calendar({ version: 'v3', auth });
+    const startDateTime = new Date(`${newDate}T${newTime}:00`);
+    const dateObj = new Date(startDateTime.getTime());
+    dateObj.setMinutes(dateObj.getMinutes() + durationMinutes);
+    const getHHMM = (d: Date) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    const endTimeString = getHHMM(dateObj);
+    
+    await calendar.events.patch({
+      calendarId: business.google_calendar_id || 'primary',
+      eventId: googleEventId,
+      requestBody: {
+        start: { dateTime: `${newDate}T${newTime}:00`, timeZone: 'America/Santiago' },
+        end: { dateTime: `${newDate}T${endTimeString}:00`, timeZone: 'America/Santiago' },
+      },
+    });
+    return true;
+  } catch (error) {
+    console.error('Error modificando evento de Google Calendar:', error);
+    return false;
   }
 }
 
@@ -304,10 +350,15 @@ export function parseClientMessage(text: string): ParsedAppointment {
 export function createDynamicPrompt(
   business: any,
   availability: AvailabilityResult | null,
-  requestedSlot: string | null
+  requestedSlot: { date: string; time: string | null } | null,
+  upcomingAppointments: any[] = []
 ): string {
+  const currentDate = new Date().toLocaleDateString('es-CL', {
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+  });
   const baseContext = `
 Eres el asistente IA oficial de ${business.name || 'este negocio'}.
+Fecha actual: ${currentDate}
 Tipo de negocio: ${business.business_type || 'Servicios profesionales'}
 Ubicación exacta: ${business.location || 'No especificada'}
 Servicios disponibles: ${Array.isArray(business.services) ? business.services.join(', ') : business.services || 'Varios servicios'}
@@ -345,23 +396,49 @@ DISPONIBILIDAD EN VIVO - ${availability.date_label}:
 - Horarios LIBRES: ${availableText}
 ${slotStatus}
 
+${upcomingAppointments.length > 0 ? `
+El paciente ACTUALMENTE tiene las siguientes citas programadas en tu clínica:
+${upcomingAppointments.map(a => `- ID [${a.id}]: ${a.service} el ${new Date(a.date_time).toLocaleString('es-CL')}`).join('\n')}
+(Si el paciente menciona reagendar o cancelar su cita, asume que habla de esto y actúa conforme a las reglas 1B y 1C).
+` : ''}
+
 REGLAS CRÍTICAS:
-1. Si la hora pedida está LIBRE y tienes el nombre del paciente → responde EXACTAMENTE con este formato, sin excepciones:
+1A. Si la hora pedida está LIBRE y tienes el nombre del paciente → responde EXACTAMENTE con este formato, sin excepciones:
    "✓ Cita agendada. Paciente: [Nombre Apellido], Día: [día], Hora: [hora], Servicio: [servicio]."
    (Si no tienes el nombre, pide el nombre primero antes de confirmar).
+1B. Si el paciente pide CANCELAR una cita suya ya existente → responde EXACTAMENTE con este formato:
+   "✓ Cita cancelada. ID: [id de la cita]."
+1C. Si el paciente pide REAGENDAR una cita a un nuevo horario y el nuevo horario está LIBRE → responde EXACTAMENTE con este formato:
+   "✓ Cita reagendada. ID: [id antigua cita], Día: [nuevo día], Hora: [nueva hora]."
 2. Si la hora pedida está OCUPADA → di: "Esa hora no está disponible. Tengo libre: [lista alternativas]"
 3. Si no mencionan hora → pregunta qué hora prefieren y muéstrales las disponibles.
 4. NUNCA confirmes una cita en una hora que aparece como OCUPADA.
 5. Sé breve y amable.`;
 }
 
-// ─── 6. Detectar si el bot confirmó una cita ─────────────────────────────────
+// ─── 6. Detectar si el bot confirmó, canceló o reagendó ───────────────────
 
 export function extractConfirmation(botResponse: string): boolean {
   const lower = botResponse.toLowerCase();
   return lower.includes('✓ cita agendada') || 
          lower.includes('cita agendada para el') ||
          lower.includes('cita confirmada');
+}
+
+export function extractCancellation(botResponse: string): string | null {
+  const match = botResponse.toLowerCase().match(/✓ cita cancelada\. id:\s*([a-f0-9\-]+)/i);
+  return match ? match[1] : null;
+}
+
+export function extractReschedule(botResponse: string): { id: string, date: string, time: string } | null {
+  const match = botResponse.match(/✓ cita reagendada\. id:\s*([a-f0-9\-]+), día:\s*([a-z0-9\-\s]+), hora:\s*([0-9:]+)/i);
+  if (match) {
+    // Para simplificar, obtenemos date y time intentando re-parsearlo
+    // Pero asume que se usan las variables de contexto o se hace un match similar
+    const p = parseClientMessage(botResponse);
+    return { id: match[1], date: p.date as string, time: match[3] };
+  }
+  return null;
 }
 
 // ─── Utilidades internas ─────────────────────────────────────────────────────
