@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
     // Generar URL de autorización
     const authUrl = oauth2Client.generateAuthUrl({
       access_type: 'offline',
-      prompt: 'select_account',
+      prompt: 'consent',
       scope: [
         'https://www.googleapis.com/auth/calendar',
         'https://www.googleapis.com/auth/calendar.events',
