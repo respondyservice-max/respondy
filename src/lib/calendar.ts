@@ -159,11 +159,17 @@ export async function createCalendarEvent(
         summary: `${capitalizeFirstLetter(params.service)} - ${params.patientName}`,
         description: `Paciente: ${params.patientName}\nTeléfono: ${params.patientPhone}\nServicio: ${params.service}`,
         start: {
-          dateTime: startDateTime.toISOString(),
+          dateTime: `${params.date}T${params.time}:00`, // NO .000Z so it uses timeZone specified
           timeZone: 'America/Santiago',
         },
         end: {
-          dateTime: endDateTime.toISOString(),
+          // calculate end time correctly
+          dateTime: (() => {
+            const dateObj = new Date(`${params.date}T${params.time}:00`);
+            dateObj.setMinutes(dateObj.getMinutes() + duration);
+            const getHHMM = (d: Date) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+            return `${params.date}T${getHHMM(dateObj)}:00`;
+          })(),
           timeZone: 'America/Santiago',
         },
       },
