@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import DashboardNav from '@/components/DashboardNav';
-import { Calendar, Clock, Phone, Trash2 } from 'lucide-react';
+import { Calendar, Clock, Phone, Trash2, Edit3, X, Check } from 'lucide-react';
 import type { Business, Appointment } from '@/types';
 
 export default function CalendarPage() {
@@ -13,6 +13,9 @@ export default function CalendarPage() {
   const [business, setBusiness] = useState<Business | null>(null);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editDate, setEditDate] = useState('');
+  const [editTime, setEditTime] = useState('');
 
   useEffect(() => {
     const fetchData = async () => {
@@ -79,6 +82,45 @@ export default function CalendarPage() {
       setAppointments(appointments.filter((a) => a.id !== id));
     } catch (e) {
       alert('Hubo un error al intentar cancelar la cita. Revisa la consola.');
+      console.error(e);
+    }
+  };
+
+  const handleUpdate = async (id: string) => {
+    if (!editDate || !editTime) {
+      alert('Por favor selecciona una fecha y hora');
+      return;
+    }
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      
+      const res = await fetch('/api/calendar/update-event', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ appointment_id: id, date: editDate, time: editTime })
+      });
+
+      if (!res.ok) throw new Error('Error al actualizar');
+      
+      // Actualizar localmente UI
+      const updatedAppts = appointments.map(a => {
+        if (a.id === id) {
+          return { ...a, date_time: new Date(`${editDate}T${editTime}:00`).toISOString() };
+        }
+        return a;
+      });
+      // Sort again
+      updatedAppts.sort((a,b) => new Date(a.date_time).getTime() - new Date(b.date_time).getTime());
+      
+      setAppointments(updatedAppts);
+      setEditId(null);
+    } catch (e) {
+      alert('Hubo un error al intentar reagendar la cita.');
       console.error(e);
     }
   };
@@ -166,14 +208,73 @@ export default function CalendarPage() {
                     </div>
 
                     {/* Actions */}
-                    <button
-                      onClick={() => handleDelete(appt.id)}
-                      className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition"
-                      title="Cancelar cita"
-                    >
-                      <Trash2 className="w-5 h-5" />
-                    </button>
+                    <div className="flex flex-col gap-2">
+                      {editId === appt.id ? (
+                        <>
+                          <button
+                            onClick={() => handleUpdate(appt.id)}
+                            className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition"
+                            title="Guardar cambios"
+                          >
+                            <Check className="w-5 h-5" />
+                          </button>
+                          <button
+                            onClick={() => setEditId(null)}
+                            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition"
+                            title="Cancelar edición"
+                          >
+                            <X className="w-5 h-5" />
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => {
+                              const d = new Date(appt.date_time);
+                              setEditId(appt.id);
+                              setEditDate(d.toISOString().split('T')[0]);
+                              setEditTime(d.toTimeString().substring(0, 5));
+                            }}
+                            className="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition"
+                            title="Reagendar cita"
+                          >
+                            <Edit3 className="w-5 h-5" />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(appt.id)}
+                            className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition"
+                            title="Cancelar cita"
+                          >
+                            <Trash2 className="w-5 h-5" />
+                          </button>
+                        </>
+                      )}
+                    </div>
                   </div>
+                  
+                  {/* Edit Form */}
+                  {editId === appt.id && (
+                    <div className="mt-4 pt-4 border-t border-gray-100 flex gap-4">
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Nueva Fecha</label>
+                        <input 
+                          type="date" 
+                          value={editDate}
+                          onChange={(e) => setEditDate(e.target.value)}
+                          className="px-3 py-2 border rounded-md text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Nueva Hora</label>
+                        <input 
+                          type="time" 
+                          value={editTime}
+                          onChange={(e) => setEditTime(e.target.value)}
+                          className="px-3 py-2 border rounded-md text-sm"
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })}
