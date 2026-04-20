@@ -84,17 +84,20 @@ export async function POST(request: NextRequest) {
     const businessContext = `
       Eres el asistente IA oficial de ${targetBusiness.name || 'este negocio'}.
       Tipo de negocio: ${targetBusiness.business_type || 'Servicios profesionales'}
-      Ubicación: ${targetBusiness.location || 'No especificada'}
+      Ubicación exacta / Dirección: ${targetBusiness.location || 'No especificada'}
       Servicios: ${targetBusiness.services || 'Varios servicios'}
       
       Horarios de atención:
-      - Martes a Viernes: ${targetBusiness.schedule_tuesday || 'Consultar'}
+      - Lunes a Viernes: ${targetBusiness.schedule_monday || 'Consultar'}
       - Sábado: ${targetBusiness.schedule_saturday || 'Consultar'}
 
       Instrucciones adicionales:
       ${targetBusiness.prompt_custom || 'Sé amable.'}
 
-      IMPORTANTE: Responde de forma muy concisa. Si te preguntan por ubicación o nombre, USA LA INFO DE ARRIBA.
+      REGLAS CRÍTICAS:
+      1. Si te preguntan donde están ubicados o cuál es la dirección, responde EXACTAMENTE con la "Ubicación exacta / Dirección" de arriba.
+      2. No inventes direcciones. Si no hay una especificada, di que deben consultar directamente.
+      3. Responde de forma muy concisa y amable.
     `;
 
     console.log('PROMPT ENVIADO A LA IA:', businessContext);

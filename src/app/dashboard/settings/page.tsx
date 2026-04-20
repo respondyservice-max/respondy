@@ -1,7 +1,7 @@
 // app/dashboard/settings/page.tsx - SETTINGS MEJORADO (SEGURO)
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import DashboardNav from '@/components/DashboardNav';
 import { useRouter } from 'next/navigation';
@@ -37,6 +37,8 @@ export default function Settings() {
   const [zavuMessage, setZavuMessage] = useState('');
   const [zavuError, setZavuError] = useState('');
   const [saveMessage, setSaveMessage] = useState('');
+  const locationInputRef = useRef<HTMLInputElement>(null);
+  const autocompleteRef = useRef<any>(null);
 
   // Cargar datos del negocio
   useEffect(() => {
@@ -86,6 +88,43 @@ export default function Settings() {
 
     fetchBusiness();
   }, [router]);
+
+  // Google Places Autocomplete
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const loadGoogleMapsScript = () => {
+      if (window.google?.maps?.places) {
+        initAutocomplete();
+        return;
+      }
+
+      const script = document.createElement('script');
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || ''}&libraries=places`;
+      script.async = true;
+      script.defer = true;
+      script.onload = () => initAutocomplete();
+      document.head.appendChild(script);
+    };
+
+    const initAutocomplete = () => {
+      if (!locationInputRef.current || !window.google?.maps?.places) return;
+
+      autocompleteRef.current = new window.google.maps.places.Autocomplete(locationInputRef.current, {
+        types: ['address'],
+        fields: ['formatted_address', 'geometry'],
+      });
+
+      autocompleteRef.current.addListener('place_changed', () => {
+        const place = autocompleteRef.current.getPlace();
+        if (place.formatted_address) {
+          setForm(prev => ({ ...prev, location: place.formatted_address }));
+        }
+      });
+    };
+
+    loadGoogleMapsScript();
+  }, []);
 
   // Guardar configuración general
   const handleSubmit = async (e: React.FormEvent) => {
@@ -342,10 +381,11 @@ export default function Settings() {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Ubicación</label>
                   <input
+                    ref={locationInputRef}
                     type="text"
                     value={form.location}
                     onChange={(e) => setForm({ ...form, location: e.target.value })}
-                    placeholder="Ej: Concepción"
+                    placeholder="Escribe tu dirección o búscala aquí..."
                     className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
                   />
                 </div>
