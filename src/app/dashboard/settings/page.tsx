@@ -16,7 +16,7 @@ export default function Settings() {
   const [zavuConnected, setZavuConnected] = useState(false);
   const [calendarConnected, setCalendarConnected] = useState(false);
   const [aiBotEnabled, setAiBotEnabled] = useState(true);
-  const [activeTab, setActiveTab] = useState<'negocio' | 'integraciones'>('negocio');
+  const [activeTab, setActiveTab] = useState<'negocio' | 'horarios' | 'integraciones'>('negocio');
 
   const [form, setForm] = useState({
     name: '',
@@ -24,8 +24,16 @@ export default function Settings() {
     location: '',
     services: '',
     prompt_custom: '',
-    schedule_monday: '9AM-6PM',
-    schedule_saturday: '9AM-1PM',
+  });
+
+  const [weeklySchedule, setWeeklySchedule] = useState<any>({
+    lunes: { active: true, open: "09:00", close: "18:00" },
+    martes: { active: true, open: "09:00", close: "18:00" },
+    miercoles: { active: true, open: "09:00", close: "18:00" },
+    jueves: { active: true, open: "09:00", close: "18:00" },
+    viernes: { active: true, open: "09:00", close: "18:00" },
+    sabado: { active: true, open: "09:00", close: "14:00" },
+    domingo: { active: false, open: "09:00", close: "18:00" }
   });
 
   const [zavuForm, setZavuForm] = useState({
@@ -66,9 +74,11 @@ export default function Settings() {
           location: data.location || '',
           services: data.services?.join(', ') || '',
           prompt_custom: data.prompt_custom || '',
-          schedule_monday: data.schedule_monday || '9AM-6PM',
-          schedule_saturday: data.schedule_saturday || '9AM-1PM',
         });
+        
+        if (data.weekly_schedule) {
+          setWeeklySchedule(data.weekly_schedule);
+        }
 
         if (data.zavu_api_key_encrypted) {
           setZavuConnected(true);
@@ -105,8 +115,7 @@ export default function Settings() {
           location: form.location,
           services: form.services.split(',').map(s => s.trim()).filter(Boolean),
           prompt_custom: form.prompt_custom,
-          schedule_monday: form.schedule_monday,
-          schedule_saturday: form.schedule_saturday,
+          weekly_schedule: weeklySchedule,
           updated_at: new Date().toISOString(),
         })
         .eq('user_id', user.id);
@@ -284,7 +293,7 @@ export default function Settings() {
         <h1 className="text-3xl font-bold mb-8 text-gray-900">Configuración</h1>
 
         {/* Tabs */}
-        <div className="flex gap-1 mb-8 bg-gray-100 p-1 rounded-xl max-w-sm">
+        <div className="flex gap-1 mb-8 bg-gray-100 p-1 rounded-xl max-w-md">
           <button
             onClick={() => setActiveTab('negocio')}
             className={`flex-1 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all ${
@@ -294,6 +303,16 @@ export default function Settings() {
             }`}
           >
             Negocio
+          </button>
+          <button
+            onClick={() => setActiveTab('horarios')}
+            className={`flex-1 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all ${
+              activeTab === 'horarios'
+                ? 'bg-white text-gray-900 shadow-sm'
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            Horarios
           </button>
           <button
             onClick={() => setActiveTab('integraciones')}
@@ -360,34 +379,6 @@ export default function Settings() {
               </div>
             </div>
 
-            {/* Horarios */}
-            <div className="bg-white rounded-xl p-6 sm:p-8 shadow-sm border border-gray-100">
-              <h2 className="text-lg font-bold mb-2 text-gray-900">Horarios</h2>
-              <p className="text-sm text-gray-500 mb-5">Los horarios se sincronizan con tu Google Calendar</p>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Lunes a Viernes</label>
-                  <input
-                    type="text"
-                    value={form.schedule_monday}
-                    onChange={(e) => setForm({ ...form, schedule_monday: e.target.value })}
-                    placeholder="9AM-6PM"
-                    className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Sábado</label>
-                  <input
-                    type="text"
-                    value={form.schedule_saturday}
-                    onChange={(e) => setForm({ ...form, schedule_saturday: e.target.value })}
-                    placeholder="9AM-1PM"
-                    className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
-                  />
-                </div>
-              </div>
-            </div>
-
             {/* Prompt */}
             <div className="bg-white rounded-xl p-6 sm:p-8 shadow-sm border border-gray-100">
               <h2 className="text-lg font-bold mb-2 text-gray-900">Prompt del agente IA</h2>
@@ -420,6 +411,92 @@ export default function Settings() {
               className="w-full py-3.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl font-semibold hover:shadow-lg hover:shadow-blue-500/25 transition-all duration-300 disabled:opacity-50"
             >
               {saving ? 'Guardando...' : 'Guardar cambios'}
+            </button>
+          </form>
+        )}
+
+        {/* TAB: HORARIOS */}
+        {activeTab === 'horarios' && (
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <div className="bg-white rounded-xl p-6 sm:p-8 shadow-sm border border-gray-100">
+              <h2 className="text-lg font-bold mb-2 text-gray-900">Horario de Apertura Base</h2>
+              <p className="text-sm text-gray-500 mb-6">
+                Este horario actuará como base semanal de la IA. Si necesitas cerrar un día específico de manera excepcional (ej. vacaciones, feriados), simplemente crea un evento de "Todo el día" en tu Google Calendar y la IA asumirá que estás cerrado.
+              </p>
+              
+              <div className="space-y-4">
+                {Object.keys(weeklySchedule).map((day) => (
+                  <div key={day} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200">
+                    <div className="flex items-center gap-4 w-1/3">
+                      <input
+                        type="checkbox"
+                        checked={weeklySchedule[day].active}
+                        onChange={(e) => {
+                          setWeeklySchedule({
+                            ...weeklySchedule,
+                            [day]: { ...weeklySchedule[day], active: e.target.checked }
+                          });
+                        }}
+                        className="w-5 h-5 text-blue-600 rounded"
+                      />
+                      <span className="font-medium capitalize text-gray-700">{day}</span>
+                    </div>
+                    
+                    <div className="flex gap-4 items-center">
+                      <div className="flex items-center gap-2">
+                        <label className="text-xs text-gray-500">Apertura</label>
+                        <input
+                          type="time"
+                          value={weeklySchedule[day].open}
+                          disabled={!weeklySchedule[day].active}
+                          onChange={(e) => {
+                            setWeeklySchedule({
+                              ...weeklySchedule,
+                              [day]: { ...weeklySchedule[day], open: e.target.value }
+                            });
+                          }}
+                          className={`px-3 py-2 border border-gray-300 rounded-md text-sm ${!weeklySchedule[day].active ? 'opacity-50 bg-gray-100' : ''}`}
+                        />
+                      </div>
+                      <span className="text-gray-400">-</span>
+                      <div className="flex items-center gap-2">
+                        <label className="text-xs text-gray-500">Cierre</label>
+                        <input
+                          type="time"
+                          value={weeklySchedule[day].close}
+                          disabled={!weeklySchedule[day].active}
+                          onChange={(e) => {
+                            setWeeklySchedule({
+                              ...weeklySchedule,
+                              [day]: { ...weeklySchedule[day], close: e.target.value }
+                            });
+                          }}
+                          className={`px-3 py-2 border border-gray-300 rounded-md text-sm ${!weeklySchedule[day].active ? 'opacity-50 bg-gray-100' : ''}`}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Save message */}
+            {saveMessage && (
+              <div className={`p-4 rounded-xl text-sm font-medium ${
+                saveMessage.includes('✅')
+                  ? 'bg-green-50 text-green-800 border border-green-200'
+                  : 'bg-red-50 text-red-800 border border-red-200'
+              }`}>
+                {saveMessage}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={saving}
+              className="w-full py-3.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl font-semibold hover:shadow-lg hover:shadow-blue-500/25 transition-all duration-300 disabled:opacity-50"
+            >
+              {saving ? 'Guardando...' : 'Guardar Horarios'}
             </button>
           </form>
         )}

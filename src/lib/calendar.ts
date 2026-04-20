@@ -71,9 +71,46 @@ export async function checkAvailability(
   const auth = await getGoogleCalendarClient(business);
   const calendar = google.calendar({ version: 'v3', auth });
 
-  // Horario del negocio
-  const scheduleMonday = business.schedule_monday || '9AM-6PM'; // ej "9AM-6PM"
-  const { start: dayStart, end: dayEnd } = parseSchedule(scheduleMonday);
+  // ─── Obtener configuración de horario para el día solicitado ──────────────
+  const requestDateObj = new Date(`${date}T12:00:00`);
+  const dayIndex = requestDateObj.getDay(); // 0: domingo, 1: lunes...
+  const daysMap = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado'];
+  const dayKey = daysMap[dayIndex];
+
+  let dayStart = '09:00';
+  let dayEnd = '18:00';
+  let isClosed = false;
+
+  if (business.weekly_schedule && business.weekly_schedule[dayKey]) {
+    const config = business.weekly_schedule[dayKey];
+    if (!config.active) {
+      isClosed = true;
+    } else {
+      dayStart = config.open;
+      dayEnd = config.close;
+    }
+  } else {
+    // Fallback temporal si por alguna razón no tienen el JSON
+    const legacySchedule = business.schedule_monday || '9AM-6PM';
+    const parsed = parseSchedule(legacySchedule);
+    dayStart = parsed.start;
+    dayEnd = parsed.end;
+  }
+
+  // Si el local está cerrado por configuración, devolvemos directo
+  if (isClosed) {
+    const date_label = requestDateObj.toLocaleDateString('es-CL', {
+      weekday: 'long', day: 'numeric', month: 'long', timeZone: 'America/Santiago'
+    });
+    return {
+      requested_slot: null,
+      is_available: false,
+      occupied_times: ['CERRADO'],
+      available_slots: [],
+      suggested_alternatives: [],
+      date_label,
+    };
+  }
 
   // Rango del día completo
   const timeMin = new Date(`${date}T${dayStart}:00`);
