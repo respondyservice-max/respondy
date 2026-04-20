@@ -141,17 +141,27 @@ export async function POST(request: NextRequest) {
     // ── 6. Si el bot confirmó la cita → crear evento en Google Calendar ────────
     if (hasCalendar && extractConfirmation(botResponse)) {
       console.log('✅ Cita confirmada por el bot. Creando evento en Google Calendar...');
+      let finalDate = parsed.date;
+      let finalTime = parsed.time;
+      let finalService = parsed.service || 'Consulta';
+      let patientName = parsed.patientName || `Paciente (${phoneFrom})`;
 
-      if (parsed.date && parsed.time) {
-        const patientName = parsed.patientName || `Paciente (${phoneFrom})`;
-        const service = parsed.service || 'Consulta';
+      // Si el mensaje del usuario no tenía fecha o hora (ej: "sí, confirmo"),
+      // intentamos extraerlos de la respuesta de confirmación del bot
+      if (!finalDate || !finalTime) {
+        const botParsed = parseClientMessage(botResponse);
+        finalDate = finalDate || botParsed.date;
+        finalTime = finalTime || botParsed.time;
+        finalService = parsed.service || botParsed.service || 'Consulta';
+      }
 
+      if (finalDate && finalTime) {
         const eventResult = await createCalendarEvent(targetBusiness, {
           patientName,
           patientPhone: phoneFrom || 'No especificado',
-          service,
-          date: parsed.date,
-          time: parsed.time,
+          service: finalService,
+          date: finalDate,
+          time: finalTime,
           durationMinutes: 45,
         });
 
@@ -161,7 +171,7 @@ export async function POST(request: NextRequest) {
           console.error('Error creando evento:', eventResult.error);
         }
       } else {
-        console.warn('Bot confirmó cita pero no se detectó fecha/hora completa para crear el evento.');
+        console.warn('Bot confirmó cita pero no se detectó fecha/hora completa ni en el mensaje del usuario ni del bot.');
       }
     }
 
