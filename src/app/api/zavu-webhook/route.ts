@@ -111,6 +111,22 @@ export async function POST(request: NextRequest) {
       console.error('ERROR CRÍTICO: GROQ_API_KEY no está configurada.');
     }
 
+    // Obtener historial de conversación para darle contexto a la IA (memoria a corto plazo)
+    const { data: previousMessages } = await supabaseAdmin
+      .from('conversations')
+      .select('message_type, message_text')
+      .eq('business_id', targetBusiness.id)
+      .eq('phone_from', phoneFrom)
+      .order('created_at', { ascending: false })
+      .limit(6); // Recordar últimos 6 mensajes
+
+    const chatHistory = (previousMessages || [])
+      .reverse()
+      .map((msg) => ({
+        role: msg.message_type === 'incoming' ? 'user' : 'assistant',
+        content: msg.message_text,
+      }));
+
     const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -121,6 +137,7 @@ export async function POST(request: NextRequest) {
         model: 'llama-3.1-8b-instant',
         messages: [
           { role: 'system', content: dynamicPrompt },
+          ...chatHistory,
           { role: 'user', content: messageText },
         ],
         temperature: 0.5,
