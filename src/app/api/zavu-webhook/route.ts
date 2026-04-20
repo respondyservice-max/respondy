@@ -1,8 +1,15 @@
 export const dynamic = "force-dynamic";
-// app/api/zavu-webhook/route.ts - WEBHOOK DE ZAVU (SEGURO)
+// app/api/zavu-webhook/route.ts - WEBHOOK DE ZAVU CON CALENDAR INTEGRADO
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { decrypt } from '@/lib/crypto';
+import {
+  parseClientMessage,
+  checkAvailability,
+  createCalendarEvent,
+  createDynamicPrompt,
+  extractConfirmation,
+} from '@/lib/calendar';
 
 export async function POST(request: NextRequest) {
   try {
@@ -10,12 +17,11 @@ export async function POST(request: NextRequest) {
     console.log('--- NUEVO MENSAJE DE ZAVU ---');
     console.log('Data recibida:', JSON.stringify(data, null, 2));
 
-    // Ajustamos la extracción para que coincida exactamente con lo que envía Zavu
-    const senderIdFromZavu = data.senderId; // Viene en la raíz
-    const messageText = data.data?.text;    // Viene dentro del objeto data
-    const phoneFrom = data.data?.from;      // Viene dentro del objeto data
+    const senderIdFromZavu = data.senderId;
+    const messageText = data.data?.text;
+    const phoneFrom = data.data?.from;
 
-    // Solo procesamos mensajes entrantes (ignoramos confirmaciones de lectura/entrega)
+    // Solo procesamos mensajes entrantes
     if (data.type !== 'message.inbound') {
       console.log('Ignorando evento tipo:', data.type);
       return NextResponse.json({ success: true, ignored: true });
@@ -26,8 +32,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Data incompleta' }, { status: 400 });
     }
 
-    // 1. Encontrar business por sender_id encriptado
-    console.log('Buscando negocio para sender_id:', senderIdFromZavu);
+    // ── 1. Encontrar negocio por sender_id ───────────────────────────────────
     const { data: businesses, error: dbError } = await supabaseAdmin
       .from('businesses')
       .select('*');
@@ -41,7 +46,6 @@ export async function POST(request: NextRequest) {
       try {
         if (!business.zavu_sender_id_encrypted) continue;
         const decryptedSenderId = decrypt(business.zavu_sender_id_encrypted);
-
         if (decryptedSenderId === senderIdFromZavu) {
           targetBusiness = business;
           console.log('Negocio encontrado:', business.name);
@@ -57,53 +61,57 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Business no encontrado' }, { status: 404 });
     }
 
-    // Verificar si el bot está activado
+    // Verificar si el agente está activo
     if (!targetBusiness.ai_bot_enabled) {
-      console.log('🔴 Bot desactivado para este negocio, ignorando mensaje');
-      return NextResponse.json({ 
-        success: true, 
-        message: 'Bot desactivado' 
-      });
+      console.log('🔴 Agente IA desactivado para este negocio, ignorando mensaje');
+      return NextResponse.json({ success: true, message: 'Agente desactivado' });
     }
 
-    // 2. Obtener credenciales del cliente (decriptar)
     const zavuApiKey = decrypt(targetBusiness.zavu_api_key_encrypted);
 
-    // 3. Procesar con Groq (Súper rápido y estable)
-    if (!process.env.GROQ_API_KEY) {
-      console.error('ERROR CRÍTICO: La variable GROQ_API_KEY no está configurada en Vercel.');
+    // ── 2. Parsear el mensaje del cliente ────────────────────────────────────
+    const parsed = parseClientMessage(messageText);
+    console.log('Intención detectada:', parsed);
+
+    // ── 3. Verificar disponibilidad si hay fecha/hora ─────────────────────────
+    let availability = null;
+    let requestedSlot = parsed.time;
+
+    const hasCalendar = !!targetBusiness.google_calendar_access_token_encrypted;
+    const isAppointmentRequest = !!(parsed.date && (parsed.service || parsed.time));
+
+    if (hasCalendar && isAppointmentRequest && parsed.date) {
+      try {
+        console.log('Consultando disponibilidad en Google Calendar para:', parsed.date);
+        availability = await checkAvailability(targetBusiness, parsed.date, 45);
+
+        // Si tiene slot solicitado, marcar si está disponible
+        if (parsed.time) {
+          availability.requested_slot = parsed.time;
+          availability.is_available = availability.available_slots.includes(parsed.time);
+        }
+
+        console.log('Disponibilidad obtenida:', {
+          date_label: availability.date_label,
+          available: availability.available_slots.length,
+          occupied: availability.occupied_times.length,
+          is_available: availability.is_available,
+        });
+      } catch (calErr) {
+        console.error('Error consultando Calendar (continuando sin disponibilidad):', calErr);
+      }
     }
 
-    // Construir el contexto del negocio para la IA
-    console.log('DATOS DEL NEGOCIO ENCONTRADO:', {
-      name: targetBusiness.name,
-      location: targetBusiness.location,
-      type: targetBusiness.business_type
-    });
+    // ── 4. Crear prompt dinámico para Groq ────────────────────────────────────
+    const dynamicPrompt = createDynamicPrompt(targetBusiness, availability, requestedSlot);
+    console.log('Prompt dinámico creado para Groq.');
 
-    const businessContext = `
-      Eres el asistente IA oficial de ${targetBusiness.name || 'este negocio'}.
-      Tipo de negocio: ${targetBusiness.business_type || 'Servicios profesionales'}
-      Ubicación exacta / Dirección: ${targetBusiness.location || 'No especificada'}
-      Servicios: ${targetBusiness.services || 'Varios servicios'}
-      
-      Horarios de atención:
-      - Lunes a Viernes: ${targetBusiness.schedule_monday || 'Consultar'}
-      - Sábado: ${targetBusiness.schedule_saturday || 'Consultar'}
+    // ── 5. Llamar a Groq con el prompt dinámico ───────────────────────────────
+    if (!process.env.GROQ_API_KEY) {
+      console.error('ERROR CRÍTICO: GROQ_API_KEY no está configurada.');
+    }
 
-      Instrucciones adicionales:
-      ${targetBusiness.prompt_custom || 'Sé amable.'}
-
-      REGLAS CRÍTICAS:
-      1. Si te preguntan donde están ubicados o cuál es la dirección, responde EXACTAMENTE con la "Ubicación exacta / Dirección" de arriba.
-      2. No inventes direcciones. Si no hay una especificada, di que deben consultar directamente.
-      3. Responde de forma muy concisa y amable.
-    `;
-
-    console.log('PROMPT ENVIADO A LA IA:', businessContext);
-
-    console.log('Generando respuesta con Groq (Llama 3.1 8B Económico)...');
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -112,63 +120,84 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify({
         model: 'llama-3.1-8b-instant',
         messages: [
-          {
-            role: 'system',
-            content: businessContext
-          },
-          {
-            role: 'user',
-            content: messageText
-          }
+          { role: 'system', content: dynamicPrompt },
+          { role: 'user', content: messageText },
         ],
-        temperature: 0.7,
+        temperature: 0.5,
       }),
     });
 
-    const groqData = await response.json();
+    const groqData = await groqRes.json();
 
     if (groqData.error) {
       console.error('ERROR DE GROQ API:', JSON.stringify(groqData.error, null, 2));
     }
 
-    const botResponse = groqData.choices?.[0]?.message?.content || 'Lo siento, tuve un problema al procesar tu mensaje.';
-    console.log('Respuesta de Groq generada:', botResponse);
+    const botResponse = groqData.choices?.[0]?.message?.content
+      || 'Lo siento, tuve un problema al procesar tu mensaje. ¿Puedes intentarlo de nuevo?';
 
-    // 4. Responder usando credenciales del cliente
-    console.log('Enviando respuesta a Zavu (v1) para:', phoneFrom);
-    const responseToZavu = await fetch('https://api.zavu.dev/v1/messages', {
+    console.log('Respuesta de Groq:', botResponse);
+
+    // ── 6. Si el bot confirmó la cita → crear evento en Google Calendar ────────
+    if (hasCalendar && extractConfirmation(botResponse)) {
+      console.log('✅ Cita confirmada por el bot. Creando evento en Google Calendar...');
+
+      if (parsed.date && parsed.time) {
+        const patientName = parsed.patientName || `Paciente (${phoneFrom})`;
+        const service = parsed.service || 'Consulta';
+
+        const eventResult = await createCalendarEvent(targetBusiness, {
+          patientName,
+          patientPhone: phoneFrom || 'No especificado',
+          service,
+          date: parsed.date,
+          time: parsed.time,
+          durationMinutes: 45,
+        });
+
+        if (eventResult.success) {
+          console.log('📅 Evento creado en Calendar:', eventResult.eventId);
+        } else {
+          console.error('Error creando evento:', eventResult.error);
+        }
+      } else {
+        console.warn('Bot confirmó cita pero no se detectó fecha/hora completa para crear el evento.');
+      }
+    }
+
+    // ── 7. Enviar respuesta al cliente via Zavu ───────────────────────────────
+    console.log('Enviando respuesta a Zavu para:', phoneFrom);
+    const zavuRes = await fetch('https://api.zavu.dev/v1/messages', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${zavuApiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        senderId: senderIdFromZavu, // Vital para que Zavu sepa cuál número usar
+        senderId: senderIdFromZavu,
         to: phoneFrom,
         text: botResponse,
       }),
     });
 
-    const zavuResult = await responseToZavu.json();
-    console.log('Resultado de Zavu API:', responseToZavu.status, JSON.stringify(zavuResult, null, 2));
+    const zavuResult = await zavuRes.json();
+    console.log('Resultado Zavu:', zavuRes.status, JSON.stringify(zavuResult, null, 2));
 
-    // 5. Guardar conversación
-    await supabaseAdmin
-      .from('conversations')
-      .insert([
-        {
-          business_id: targetBusiness.id,
-          phone_from: phoneFrom,
-          message_type: 'incoming',
-          message_text: messageText,
-        },
-        {
-          business_id: targetBusiness.id,
-          phone_from: phoneFrom,
-          message_type: 'outgoing',
-          message_text: botResponse,
-        },
-      ]);
+    // ── 8. Guardar conversación en BD ─────────────────────────────────────────
+    await supabaseAdmin.from('conversations').insert([
+      {
+        business_id: targetBusiness.id,
+        phone_from: phoneFrom,
+        message_type: 'incoming',
+        message_text: messageText,
+      },
+      {
+        business_id: targetBusiness.id,
+        phone_from: phoneFrom,
+        message_type: 'outgoing',
+        message_text: botResponse,
+      },
+    ]);
 
     return NextResponse.json({ success: true });
   } catch (error) {
