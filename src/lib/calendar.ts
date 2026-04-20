@@ -316,24 +316,46 @@ export function parseClientMessage(text: string): ParsedAppointment {
   const dayMap: Record<string, number> = {
     'lunes': 1, 'martes': 2, 'miércoles': 3, 'miercoles': 3,
     'jueves': 4, 'viernes': 5, 'sábado': 6, 'sabado': 6,
+    'domingo': 0, 'domingo ': 0
   };
 
-  if (lower.includes('hoy') || lower.includes('para hoy')) {
-    date = formatDate(today);
-  } else if (lower.includes('mañana') || lower.includes('manana')) {
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    date = formatDate(tomorrow);
-  } else {
-    for (const [day, dayNum] of Object.entries(dayMap)) {
-      if (lower.includes(day)) {
-        const current = today.getDay();
-        let diff = dayNum - current;
-        if (diff <= 0) diff += 7; // Próximo
-        const target = new Date(today);
-        target.setDate(today.getDate() + diff);
-        date = formatDate(target);
-        break;
+  const monthMap: Record<string, number> = {
+    'enero': 0, 'febrero': 1, 'marzo': 2, 'abril': 3, 'mayo': 4, 'junio': 5,
+    'julio': 6, 'agosto': 7, 'septiembre': 8, 'octubre': 9, 'noviembre': 10, 'diciembre': 11
+  };
+
+  // 1. Intentar detectar fecha específica "24 de abril"
+  const dateSpecificMatch = lower.match(/(\d{1,2})\s+de\s+([a-z]+)/i);
+  if (dateSpecificMatch) {
+    const dayNumeric = parseInt(dateSpecificMatch[1]);
+    const monthName = dateSpecificMatch[2];
+    if (monthMap[monthName] !== undefined) {
+      const targetDate = new Date(today.getFullYear(), monthMap[monthName], dayNumeric);
+      // Si la fecha ya pasó este año, asumir el próximo año
+      if (targetDate < today) targetDate.setFullYear(today.getFullYear() + 1);
+      date = formatDate(targetDate);
+    }
+  }
+
+  // 2. Si no hubo match específico, intentar días relativos
+  if (!date) {
+    if (lower.includes('hoy') || lower.includes('para hoy')) {
+      date = formatDate(today);
+    } else if (lower.includes('mañana') || lower.includes('manana')) {
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      date = formatDate(tomorrow);
+    } else {
+      for (const [day, dayNum] of Object.entries(dayMap)) {
+        if (lower.includes(day)) {
+          const current = today.getDay();
+          let diff = dayNum - current;
+          if (diff <= 0) diff += 7; // Próximo
+          const target = new Date(today);
+          target.setDate(today.getDate() + diff);
+          date = formatDate(target);
+          break;
+        }
       }
     }
   }
@@ -372,7 +394,7 @@ export function parseClientMessage(text: string): ParsedAppointment {
   const nameMatchFormatted = text.match(/paciente:\s*([A-Za-z\u00C0-\u024F ]+?)(?:,|$|\n)/i);
   const nameMatchPrefix = text.match(/(?:me llamo|soy|nombre[:\s]+)\s+([A-Z\u00C0-\u024F][a-z\u00C0-\u024F]+(?:\s+[A-Z\u00C0-\u024F][a-z\u00C0-\u024F]+)?)/i);
   // Detectar nombre bare: dos palabras capitalizadas consecutivas que NO sean días/meses/servicios
-  const ignoreWords = new Set(['Fecha','Hora','Servicio','Limpieza','Jueves','Lunes','Martes','Miércoles','Miercoles','Viernes','Sábado','Sabado','Domingo','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Hola','Pedro','Quiero','Necesito','Buenos']);
+  const ignoreWords = new Set(['Fecha','Hora','Servicio','Limpieza','Jueves','Lunes','Martes','Miércoles','Miercoles','Viernes','Sábado','Sabado','Domingo','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Hola','Quiero','Necesito','Buenos','Entonces']);
   const bareNameMatch = text.match(/\b([A-ZÀ-ÖØ-Þ][a-zÀ-öø-ÿ]{1,}(?:\s+[A-ZÀ-ÖØ-Þ][a-zÀ-öø-ÿ]{1,})?)\b/);
   
   if (nameMatchFormatted) {
