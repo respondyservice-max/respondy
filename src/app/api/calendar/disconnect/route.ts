@@ -3,7 +3,7 @@ export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase, supabaseAdmin } from '@/lib/supabase';
 
-export async function POST(_request: NextRequest) {
+export async function POST(request: NextRequest) {
   try {
     const authHeader = request.headers.get('Authorization');
     const token = authHeader?.split('Bearer ')[1];
@@ -23,7 +23,8 @@ export async function POST(_request: NextRequest) {
       .eq('user_id', user.id);
 
     return NextResponse.json({ success: true, message: 'Google Calendar desconectado' });
-  } catch {
+  } catch (error) {
+    console.error('Error desconectando Calendar:', error);
     return NextResponse.json({ error: 'Error interno' }, { status: 500 });
   }
 }
