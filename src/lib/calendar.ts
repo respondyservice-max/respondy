@@ -441,6 +441,8 @@ export function createDynamicPrompt(
   const isSlotFree = requestedSlot?.time && availability?.available_slots.includes(requestedSlot.time);
   const allDataReady = hasName && hasDate && hasTime && isSlotFree;
 
+  const availableText = availability?.occupied_times.includes('CERRADO') ? 'CERRADO' : (availability?.available_slots.join(', ') || 'Ninguno');
+
   // 1. INSTRUCCIÓN PRIORITARIA
   let statusInfo = '';
   if (allDataReady) {
