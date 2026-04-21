@@ -366,6 +366,7 @@ export function parseClientMessage(text: string): ParsedAppointment {
   // Intentar extraer hora con múltiples patrones, del más específico al más general
   const timePatterns: Array<{ re: RegExp; hourGrp: number; minGrp: number | null; merGrp: number | null }> = [
     { re: /(\d{1,2}):(\d{2})\s*(am|pm)?/i, hourGrp: 1, minGrp: 2, merGrp: 3 },   // 10:30, 10:30am
+    { re: /\b(\d{2})(\d{2})\b/,             hourGrp: 1, minGrp: 2, merGrp: null }, // 1230, 1500
     { re: /(\d{1,2})\s*(?:hrs|horas)/i,     hourGrp: 1, minGrp: null, merGrp: null }, // 15 hrs
     { re: /(\d{1,2})\s*(am|pm)/i,           hourGrp: 1, minGrp: null, merGrp: 2 }, // 9am
     { re: /a las (\d{1,2})/i,               hourGrp: 1, minGrp: null, merGrp: null }, // a las 9
@@ -454,9 +455,14 @@ Hora: ${collectedData!.time}
 ACCION: Confirma la cita ahora con el formato obligatorio: "✓ Cita agendada. Paciente: ${collectedData!.name}, Día: ${collectedData!.date}, Hora: ${collectedData!.time}, Servicio: ${collectedData!.service || 'Consulta'}."
 `;
   } else {
+    const missing = [];
+    if (!hasName) missing.push('Nombre Completo');
+    if (!hasDate) missing.push('Fecha');
+    if (!hasTime) missing.push('Hora');
+    
     statusInfo = `
-[SISTEMA]: Faltan datos para agendar.
-- Datos conocidos: Nombre: ${collectedData?.name || 'FALTA'}, Fecha: ${collectedData?.date || 'FALTA'}, Hora: ${collectedData?.time || 'FALTA'}.
+[SISTEMA]: Faltan datos para agendar: ${missing.join(', ')}.
+- Datos conocidos: Paciente: ${collectedData?.name || 'DESCONOCIDO'}, Día: ${collectedData?.date || 'PENDIENTE'}, Hora: ${collectedData?.time || 'PENDIENTE'}.
 - Disponibilidad para hoy: ${availableText}.
 `;
   }

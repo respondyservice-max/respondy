@@ -85,13 +85,13 @@ export async function POST(request: NextRequest) {
       .order('created_at', { ascending: false })
       .limit(15);
 
-    // Combinar el historial antiguo con el mensaje actual para el parseador
+    // Combinar historial previo con el mensaje actual
+    // Incluimos mensajes del asistente para rescatar nombres ya confirmados
     const historyText = (previousMessages || [])
-      .filter(m => m.message_type === 'incoming')
       .map(m => m.message_text)
       .reverse();
-    const combinedContext = [...historyText, messageText].join(' ');
-    console.log('Contexto para parseo:', combinedContext);
+    const combinedContext = [...historyText, messageText].join(' | ');
+    console.log('Contexto para parseo (enriquecido):', combinedContext);
 
     // ── 3. Parsear con contexto enriquecido ───────────────────────────────────
     const parsed = parseClientMessage(combinedContext);
