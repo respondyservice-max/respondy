@@ -108,6 +108,8 @@ export async function POST(request: NextRequest) {
       if (pastAppts?.[0]) persistentName = pastAppts[0].patient_name;
     }
 
+    const hasCalendar = !!targetBusiness.google_calendar_access_token_encrypted;
+
     // ── 3.2 Verificar disponibilidad ──
     let availability = null;
     const finalDate = parsed.date;
@@ -219,7 +221,7 @@ export async function POST(request: NextRequest) {
       }
     }
     // CASO C: AGENDAR NUEVA
-    else if (hasCalendar && extractConfirmation(botResponse)) {
+    else if (extractConfirmation(botResponse) && hasCalendar) {
       console.log('✅ Cita confirmada por el bot. Creando evento en Google Calendar...');
       let finalDate = parsed.date;
       let finalTime = parsed.time;
