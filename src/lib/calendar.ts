@@ -331,15 +331,12 @@ export async function parseClientMessage(history: string): Promise<{
         messages: [
           {
             role: 'system',
-            content: `Eres un extractor de datos para una clínica dental. Hoy es ${today.toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}.
-            Analiza el historial de chat y extrae los datos del PACIENTE. 
-            Reglas:
-            1. El patientName debe ser el nombre completo del paciente que se atenderá.
-            2. La date debe ser YYYY-MM-DD.
-            3. La time debe ser HH:mm (24h).
-            4. Solo devuelve un objeto JSON puro. Nada más.`,
+            content: `Eres un extractor técnico. Hoy es ${today.toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}.
+            Extrae Nombre, Fecha (YYYY-MM-DD) y Hora (HH:mm) del historial.
+            IMPORTANTE: Si el usuario dijo "Viernes 24", extrae "2026-04-24". Si dijo "17:00" o "las 5", extrae "17:00".
+            Devuelve SOLO JSON: {"patientName": string, "date": string, "time": string, "service": string}`,
           },
-          { role: 'user', content: `Historial de chat: ${history}` },
+          { role: 'user', content: `Chat: ${history}` },
         ],
         temperature: 0,
         response_format: { type: "json_object" }
@@ -356,7 +353,6 @@ export async function parseClientMessage(history: string): Promise<{
       service: result.service || null
     };
   } catch (e) {
-    console.error('Error en parse con IA:', e);
     return { date: null, time: null, patientName: null, service: null };
   }
 }
@@ -381,38 +377,40 @@ export function createDynamicPrompt(
   const allDataReady = hasName && hasDate && hasTime && isSlotFree;
 
   // 1. FICHA TÉCNICA (ESTADO ABSOLUTO)
-  const availableText = availability?.occupied_times.includes('CERRADO') ? 'CERRADO (No atendemos)' : (availability?.available_slots.join(', ') || 'Sin cupos');
+  // Normalizamos para evitar fallos de comparación
+  const availableSlots = availability?.available_slots || [];
+  const cleanRequestedTime = requestedSlot?.time?.trim();
+  const isSlotFree = cleanRequestedTime && availableSlots.includes(cleanRequestedTime);
+  const allDataReady = hasName && hasDate && hasTime && isSlotFree;
+  const availableText = availableSlots.length > 0 ? availableSlots.join(', ') : 'Sin cupos';
   
   const statusMemo = `
-### FICHA DE AGENDAMIENTO REAL-TIME ###
+### FICHA DE AGENDAMIENTO ###
 - PACIENTE: ${collectedData?.name || 'DESCONOCIDO'}
 - FECHA: ${collectedData?.date || 'PENDIENTE'}
 - HORA: ${collectedData?.time || 'PENDIENTE'}
-- ESTADO CALENDAR: ${allDataReady ? '✅ HORA LIBRE' : (requestedSlot?.time && !isSlotFree ? '❌ OCUPADA' : '⏳ VERIFICANDO')}
-- OPCIONES DISPONIBLES: ${availableText}
-#######################################
+- CALENDAR: ${isSlotFree ? '✅ LIBRE' : '❌ OCUPADA/PENDIENTE'}
+#############################
 `;
 
   let flowInstruction = '';
   if (allDataReady) {
-    flowInstruction = `ORDEN SUPREMA: ¡AGENDAR AHORA! Responde exactamente con la confirmación oficial:
-"✓ Cita agendada. Paciente: ${collectedData!.name}, Día: ${collectedData!.date}, Hora: ${collectedData!.time}, Servicio: ${collectedData!.service || 'Consulta'}."`;
-  } else if (requestedSlot?.time && !isSlotFree) {
-    flowInstruction = `ORDEN: Hora ocupada. Di: "Esa hora no está disponible. Tengo estas opciones libres para el ${collectedData?.date}: ${availableText}. ¿Cuál te acomoda?"`;
+    flowInstruction = `ORDEN: CONFIRMA AHORA. Responde: "✓ Cita agendada. Paciente: ${collectedData!.name}, Día: ${collectedData!.date}, Hora: ${collectedData!.time}, Servicio: Consulta."`;
+  } else if (hasDate && hasTime && !isSlotFree) {
+    flowInstruction = `ORDEN: La hora ${collectedData?.time} está ocupada para el ${collectedData?.date}. Ofrece solo estas: ${availableText}.`;
   } else {
-    flowInstruction = `ORDEN: Pide SOLO lo que dice PENDIENTE o DESCONOCIDO. Sé muy breve.
-- Si falta nombre: "¿A nombre de quién agendamos?"
-- Si falta fecha/hora: Ofrece estas opciones: ${availableText}`;
+    flowInstruction = `ORDEN: Pide SOLO lo faltante. Sé muy breve.
+- Si falta nombre: "¿Nombre del paciente?"
+- Si falta fecha: "¿Qué día?" (Opciones: ${availableText})
+- Si falta hora: "¿Qué hora?" (Opciones: ${availableText})`;
   }
 
   return `
 ${statusMemo}
 ${flowInstruction}
 
-Eres el asistente automático de Clínica Smile. Sé muy breve, seco y directo como un chatbot. No pidas perdón ni uses frases largas.
-NUNCA repitas el texto que empieza por ###. Es solo para tu memoria.
-
-${business.prompt_custom || ''}
+Eres el asistente automático de Clínica Smile. Sé muy seco y directo. No uses frases largas.
+NUNCA repitas el texto que empieza por ###.
 `.trim();
 }
 
