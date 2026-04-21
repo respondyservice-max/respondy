@@ -76,30 +76,22 @@ export async function POST(request: NextRequest) {
     // Normalizar teléfono (quitar el + para búsquedas consistentes)
     const normalizedPhone = phoneFrom.replace('+', '');
     
-    // ── 1.5 Guardar el mensaje entrante inmediatamente para que sea parte del historial ──
-    await supabaseAdmin.from('conversations').insert({
-      business_id: targetBusiness.id,
-      phone_from: normalizedPhone,
-      message_text: messageText,
-      message_type: 'incoming',
-    });
-
-    // ── 2. Obtener historial para parseo enriquecido ─────────────────────────
+    // ── 2. Obtener historial previo (solo mensajes antiguos) ──────────────────
     const { data: previousMessages } = await supabaseAdmin
       .from('conversations')
       .select('message_type, message_text')
       .eq('business_id', targetBusiness.id)
       .eq('phone_from', normalizedPhone)
       .order('created_at', { ascending: false })
-      .limit(20);
+      .limit(15);
 
-    // Combinar TODO el historial reciente para parsear con contexto completo
-    const historyForParsing = (previousMessages || [])
+    // Combinar el historial antiguo con el mensaje actual para el parseador
+    const historyText = (previousMessages || [])
       .filter(m => m.message_type === 'incoming')
       .map(m => m.message_text)
       .reverse();
-    const combinedContext = historyForParsing.join(' ');
-    console.log('Contexto combinado para parseo (historial completo):', combinedContext);
+    const combinedContext = [...historyText, messageText].join(' ');
+    console.log('Contexto para parseo:', combinedContext);
 
     // ── 3. Parsear con contexto enriquecido ───────────────────────────────────
     const parsed = parseClientMessage(combinedContext);
@@ -182,6 +174,7 @@ export async function POST(request: NextRequest) {
         messages: [
           { role: 'system', content: dynamicPrompt },
           ...chatHistory,
+          { role: 'user', content: messageText },
         ],
         temperature: 0.5,
       }),
@@ -287,13 +280,21 @@ export async function POST(request: NextRequest) {
     const zavuResult = await zavuRes.json();
     console.log('Resultado Zavu:', zavuRes.status, JSON.stringify(zavuResult, null, 2));
 
-    // ── 8. Guardar mensaje saliente en BD ────────────────────────────────────
-    await supabaseAdmin.from('conversations').insert({
-      business_id: targetBusiness.id,
-      phone_from: normalizedPhone,
-      message_type: 'outgoing',
-      message_text: botResponse,
-    });
+    // ── 8. Guardar AMBOS mensajes en la BD al final para evitar duplicados y race conditions
+    await supabaseAdmin.from('conversations').insert([
+      {
+        business_id: targetBusiness.id,
+        phone_from: normalizedPhone,
+        message_type: 'incoming',
+        message_text: messageText,
+      },
+      {
+        business_id: targetBusiness.id,
+        phone_from: normalizedPhone,
+        message_type: 'outgoing',
+        message_text: botResponse,
+      }
+    ]);
 
     return NextResponse.json({ success: true });
   } catch (error) {
