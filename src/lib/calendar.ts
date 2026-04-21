@@ -434,56 +434,46 @@ export function createDynamicPrompt(
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
   });
 
-  // 1. DISPONIBILIDAD
-  const isClosed = availability?.occupied_times.includes('CERRADO');
-  const availableText = isClosed ? 'NINGUNO (CERRADO)' : (availability?.available_slots.length ? availability.available_slots.join(', ') : 'NINGUNO');
-  
-  // 2. VALIDACIÓN DE DATOS
-  const hasName = collectedData?.name && collectedData.name.split(' ').length >= 2;
+  const hasName = collectedData?.name && collectedData.name.trim().split(/\s+/).length >= 2;
   const hasDate = !!collectedData?.date;
   const hasTime = !!collectedData?.time;
-  const allDataReady = hasName && hasDate && hasTime;
+  const isSlotFree = requestedSlot?.time && availability?.available_slots.includes(requestedSlot.time);
+  const allDataReady = hasName && hasDate && hasTime && isSlotFree;
 
-  // 3. LOGICA DE SLOT SOLICITADO
-  let slotStatus = '';
-  if (requestedSlot?.time) {
-    const isFree = availability?.available_slots.includes(requestedSlot.time);
-    slotStatus = isFree ? `✅ HORA ${requestedSlot.time} DISPONIBLE.` : `❌ HORA ${requestedSlot.time} OCUPADA.`;
-  }
-
-  // 4. INSTRUCCIÓN CRÍTICA
-  let instruction = '';
-  if (allDataReady && slotStatus.includes('✅')) {
-    instruction = `
-ORDEN SUPREMA: El paciente ya dio todo. NO PIDAS MÁS DATOS (ni nombre, ni fecha de nacimiento, ni nada).
-DATOS CAPTURADOS: Nombre: ${collectedData!.name}, Fecha: ${collectedData!.date}, Hora: ${collectedData!.time}.
-DEBES AGENDAR AHORA MISMO USANDO ESTE FORMATO:
+  // 1. INSTRUCCIÓN REINA (Si está todo listo, no dejamos que la IA piense, solo que ejecute)
+  let headerOrder = '';
+  if (allDataReady) {
+    headerOrder = `
+⚠️ ORDEN PRIORITARIA: ¡TODOS LOS DATOS ESTÁN LISTOS!
+NO pidas NADA al paciente (ni nombre, ni confirmación, ni fecha de nacimiento).
+CONFIRMA LA CITA AHORA MISMO con este texto:
 "✓ Cita agendada. Paciente: ${collectedData!.name}, Día: ${collectedData!.date}, Hora: ${collectedData!.time}, Servicio: ${collectedData!.service || 'Consulta'}."
 `;
-  } else {
-    instruction = `
-OBJETIVO: Agendar la cita. 
-- Datos que YA conocemos (NO los vuelvas a pedir): Nombre: ${collectedData?.name || 'FALTA'}, Fecha/Hora: ${collectedData?.date || 'FALTA'} ${collectedData?.time || ''}.
-- Pide SOLO lo que dice FALTA. 
-- NUNCA pidas fecha de nacimiento ni RUT.
-- Si la hora está ocupada, ofrece: ${availableText}.
-`;
   }
 
+  const availableText = availability?.occupied_times.includes('CERRADO') ? 'CERRADO' : (availability?.available_slots.join(', ') || 'Ninguno');
+
   return `
-Asistente de ${business.name}. Hoy: ${currentDate}.
-Ubicación: ${business.location}
-Servicios: ${Array.isArray(business.services) ? business.services.join(', ') : business.services}
+${headerOrder}
 
-${business.prompt_custom ? `Nota: ${business.prompt_custom}` : ''}
+Identidad: Asistente virtual de ${business.name}.
+Hoy es: ${currentDate}.
+Reglas de Oro:
+- NUNCA pidas "Fecha de Nacimiento" ni "RUT". No es necesario.
+- Si falta el nombre o el apellido, pídelo amablemente.
+- Si la hora está ocupada, ofrece las alternativas: ${availableText}.
+- Si el paciente dice su nombre (ej: "Pedro Zúñiga"), ya lo tienes, no lo vuelvas a preguntar.
 
-DISPONIBILIDAD PARA EL DÍA:
-- Libres: ${availableText}
-${slotStatus}
+Contexto actual del sistema:
+- Paciente detectado: ${collectedData?.name || 'Aún no identificado'}
+- Fecha detectada: ${collectedData?.date || 'Aún no definida'}
+- Hora detectada: ${collectedData?.time || 'Aún no definida'}
+- Estado de la hora: ${isSlotFree ? 'DISPONIBLE' : 'OCUPADA/NO DEFINIDA'}
 
-${instruction}
+Instrucciones del negocio:
+${business.prompt_custom || 'Agendar citas.'}
 
-FORMATOS OBLIGATORIOS:
+FORMATOS TÉCNICOS OBLIGATORIOS:
 - Agendar: "✓ Cita agendada. Paciente: [Nombre Apellido], Día: [día], Hora: [hora], Servicio: [servicio]."
 - Cancelar: "✓ Cita cancelada. ID: [id]."
 - Reagendar: "✓ Cita reagendada. ID: [id], Día: [día], Hora: [hora]."
