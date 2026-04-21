@@ -392,11 +392,13 @@ export function parseClientMessage(text: string): ParsedAppointment {
 
   // Detectar nombre del paciente
   let patientName: string | null = null;
-  const nameMatchFormatted = text.match(/paciente:\s*([A-Za-z\u00C0-\u024F ]+?)(?:,|$|\n)/i);
-  const nameMatchPrefix = text.match(/(?:me llamo|soy|nombre[:\s]+)\s+([A-Z\u00C0-\u024F][a-z\u00C0-\u024F]+(?:\s+[A-Z\u00C0-\u024F][a-z\u00C0-\u024F]+)?)/i);
-  // Detectar nombre bare: dos palabras capitalizadas consecutivas que NO sean días/meses/servicios
-  const ignoreWords = new Set(['Fecha','Hora','Servicio','Limpieza','Jueves','Lunes','Martes','Miércoles','Miercoles','Viernes','Sábado','Sabado','Domingo','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Hola','Quiero','Necesito','Buenos','Entonces']);
-  const bareNameMatch = text.match(/\b([A-ZÀ-ÖØ-Þ][a-zÀ-öø-ÿ]{1,}(?:\s+[A-ZÀ-ÖØ-Þ][a-zÀ-öø-ÿ]{1,})?)\b/);
+  // 1. Formato estructurado "Paciente: [Nombre]"
+  const nameMatchFormatted = text.match(/paciente:\s*([A-Z\u00C0-\u024FñÑ][a-z\u00C0-\u024FñÑ]+(?:\s+[A-Z\u00C0-\u024FñÑ][a-z\u00C0-\u024FñÑ]+)+)/i);
+  // 2. Con prefijos "me llamo", "soy", etc.
+  const nameMatchPrefix = text.match(/(?:me llamo|soy|nombre es|nombre[:\s]+)\s+([A-Z\u00C0-\u024FñÑ][a-z\u00C0-\u024FñÑ]+(?:\s+[A-Z\u00C0-\u024FñÑ][a-z\u00C0-\u024FñÑ]+)?)/i);
+  // 3. Nombre bare: dos palabras capitalizadas que no sean días/meses
+  const ignorePhrases = new Set(['Fecha','Hora','Servicio','Limpieza','Jueves','Lunes','Martes','Miércoles','Miercoles','Viernes','Sábado','Sabado','Domingo','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Hola','Quiero','Necesito','Buenos','Entonces','Cita','Agendar']);
+  const bareNameMatch = text.match(/\b([A-Z\u00C0-\u024FñÑ][a-z\u00C0-\u024FñÑ]{1,}(?:\s+[A-Z\u00C0-\u024FñÑ][a-z\u00C0-\u024FñÑ]{1,})?)\b/);
   
   if (nameMatchFormatted) {
     patientName = nameMatchFormatted[1].trim();
@@ -404,15 +406,14 @@ export function parseClientMessage(text: string): ParsedAppointment {
     patientName = nameMatchPrefix[1].trim();
   } else if (bareNameMatch) {
     const candidate = bareNameMatch[1].trim();
-    // Solo aceptar si tiene al menos dos palabras (nombre y apellido) o si parece un nombre propio
     const words = candidate.split(' ');
-    if (words.length >= 2 && !ignoreWords.has(words[0])) {
+    if (words.length >= 2 && !ignorePhrases.has(words[0])) {
       patientName = candidate;
     }
   }
 
   // Detectar servicio en el formato IA si está presente ("Servicio: Limpieza")
-  const serviceMatchFormatted = text.match(/servicio:\s*([A-Za-z\u00C0-\u024F ]+?)(?:,|$|\n)/i);
+  const serviceMatchFormatted = text.match(/servicio:\s*([A-Za-z\u00C0-\u024FñÑ ]+?)(?:,|$|\n)/i);
   if (serviceMatchFormatted) {
     service = serviceMatchFormatted[1].trim();
   }
@@ -454,16 +455,17 @@ export function createDynamicPrompt(
   let instruction = '';
   if (allDataReady && slotStatus.includes('✅')) {
     instruction = `
-ORDEN SUPREMA: EL PACIENTE YA DIO TODO Y LA HORA ESTÁ LIBRE. 
-DEBES AGENDAR AHORA MISMO USANDO ESTE FORMATO EXACTO:
+ORDEN SUPREMA: El paciente ya dio todo. NO PIDAS MÁS DATOS (ni nombre, ni fecha de nacimiento, ni nada).
+DATOS CAPTURADOS: Nombre: ${collectedData!.name}, Fecha: ${collectedData!.date}, Hora: ${collectedData!.time}.
+DEBES AGENDAR AHORA MISMO USANDO ESTE FORMATO:
 "✓ Cita agendada. Paciente: ${collectedData!.name}, Día: ${collectedData!.date}, Hora: ${collectedData!.time}, Servicio: ${collectedData!.service || 'Consulta'}."
-No saludes de nuevo, no pidas confirmación, solo escribe esa línea y despídete amablemente.
 `;
   } else {
     instruction = `
 OBJETIVO: Agendar la cita. 
-- Datos actuales: Nombre: ${collectedData?.name || 'FALTA'}, Fecha/Hora: ${collectedData?.date || 'FALTA'} ${collectedData?.time || ''}.
-- Si falta algo, pídelo de forma natural.
+- Datos que YA conocemos (NO los vuelvas a pedir): Nombre: ${collectedData?.name || 'FALTA'}, Fecha/Hora: ${collectedData?.date || 'FALTA'} ${collectedData?.time || ''}.
+- Pide SOLO lo que dice FALTA. 
+- NUNCA pidas fecha de nacimiento ni RUT.
 - Si la hora está ocupada, ofrece: ${availableText}.
 `;
   }
