@@ -127,23 +127,36 @@ export async function checkAvailability(
 
   const events = data.items || [];
 
-  // Extraer horarios ocupados
+  // Extraer horarios ocupados (Forzando zona horaria de Chile)
   const occupied_times: string[] = [];
   for (const event of events) {
-    const start = event.start?.dateTime;
+    const start = event.start?.dateTime || event.start?.date;
     if (start) {
       const d = new Date(start);
-      occupied_times.push(`${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`);
+      const timeStr = d.toLocaleTimeString('es-CL', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+        timeZone: 'America/Santiago'
+      });
+      occupied_times.push(timeStr);
     }
   }
 
   // Generar slots disponibles (cada 30 min)
   const available_slots: string[] = [];
+  // Usamos una base UTC para el cálculo y extraemos la hora local de Chile para la etiqueta
   let current = new Date(`${date}T${dayStart}:00`);
   const end = new Date(`${date}T${dayEnd}:00`);
 
   while (current <= new Date(end.getTime() - durationMinutes * 60 * 1000)) {
-    const slot = `${String(current.getHours()).padStart(2, '0')}:${String(current.getMinutes()).padStart(2, '0')}`;
+    const slot = current.toLocaleTimeString('es-CL', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+      timeZone: 'America/Santiago'
+    });
+    
     if (!occupied_times.includes(slot)) {
       available_slots.push(slot);
     }
