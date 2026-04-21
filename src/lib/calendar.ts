@@ -366,6 +366,7 @@ export function parseClientMessage(text: string): ParsedAppointment {
   // Intentar extraer hora con múltiples patrones, del más específico al más general
   const timePatterns: Array<{ re: RegExp; hourGrp: number; minGrp: number | null; merGrp: number | null }> = [
     { re: /(\d{1,2}):(\d{2})\s*(am|pm)?/i, hourGrp: 1, minGrp: 2, merGrp: 3 },   // 10:30, 10:30am
+    { re: /(\d{1,2})\s*(?:hrs|horas)/i,     hourGrp: 1, minGrp: null, merGrp: null }, // 15 hrs, 15 horas
     { re: /(\d{1,2})\s*(am|pm)/i,           hourGrp: 1, minGrp: null, merGrp: 2 }, // 9am, 9 am
     { re: /a las (\d{1,2})/i,               hourGrp: 1, minGrp: null, merGrp: null }, // a las 9
   ];
@@ -432,94 +433,60 @@ export function createDynamicPrompt(
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
   });
 
-  // Construir resumen del horario semanal desde el JSON inteligente
-  let scheduleText = '';
-  if (business.weekly_schedule) {
-    const ws = business.weekly_schedule;
-    const days = ['lunes','martes','miercoles','jueves','viernes','sabado','domingo'];
-    const dayNames: Record<string, string> = { lunes:'Lunes', martes:'Martes', miercoles:'Miércoles', jueves:'Jueves', viernes:'Viernes', sabado:'Sábado', domingo:'Domingo' };
-    scheduleText = days
-      .map(d => ws[d] ? (ws[d].active ? `${dayNames[d]}: ${ws[d].open} - ${ws[d].close}` : `${dayNames[d]}: CERRADO`) : '')
-      .filter(Boolean)
-      .join(', ');
-  } else {
-    scheduleText = `Lunes a Viernes ${business.schedule_monday || '9AM-6PM'}, Sábados ${business.schedule_saturday || '9AM-1PM'}`;
-  }
+  // 1. DISPONIBILIDAD
+  const isClosed = availability?.occupied_times.includes('CERRADO');
+  const availableText = isClosed ? 'NINGUNO (CERRADO)' : (availability?.available_slots.length ? availability.available_slots.join(', ') : 'NINGUNO');
+  
+  // 2. VALIDACIÓN DE DATOS
+  const hasName = collectedData?.name && collectedData.name.split(' ').length >= 2;
+  const hasDate = !!collectedData?.date;
+  const hasTime = !!collectedData?.time;
+  const allDataReady = hasName && hasDate && hasTime;
 
-  const baseContext = `
-Eres el asistente IA oficial de ${business.name || 'este negocio'}.
-Fecha actual: ${currentDate}
-Tipo de negocio: ${business.business_type || 'Servicios profesionales'}
-Ubicación exacta: ${business.location || 'No especificada'}
-Servicios disponibles: ${Array.isArray(business.services) ? business.services.join(', ') : business.services || 'Varios servicios'}
-Horario de atención: ${scheduleText}
-
-${business.prompt_custom ? `Instrucciones especiales: ${business.prompt_custom}` : ''}
-`.trim();
-
-  if (!availability) {
-    return `${baseContext}
-
-REGLAS:
-1. Si el paciente pide una cita, pídele el día y hora deseados.
-2. Si pregunta por la dirección, responde con la ubicación exacta de arriba.
-3. Sé conciso y amable.`;
-  }
-
-  const isClosed = availability.occupied_times.includes('CERRADO');
-  const occupiedText = isClosed ? 'Este día está CERRADO por configuración del horario.' : (availability.occupied_times.length > 0 ? availability.occupied_times.join(', ') : 'ninguno');
-  const availableText = isClosed ? 'No hay horas disponibles (día cerrado).' : (availability.available_slots.length > 0 ? availability.available_slots.join(', ') : 'no hay horarios disponibles');
-
+  // 3. LOGICA DE SLOT SOLICITADO
   let slotStatus = '';
-  if (isClosed) {
-    slotStatus = `[INSTRUCCIÓN INTERNA - NO repetir al usuario]: El día solicitado está CERRADO por configuración. Infórmale amablemente que no atendemos ese día y sugírele otro día disponible.`;
-  } else if (requestedSlot && requestedSlot.time) {
-    const reqTime = requestedSlot.time;
-    const isSlotFree = availability.available_slots.includes(reqTime);
-    slotStatus = isSlotFree
-      ? `[INSTRUCCIÓN INTERNA]: La hora solicitada (${reqTime}) ESTÁ LIBRE. Procede a confirmar la cita.`
-      : `[INSTRUCCIÓN INTERNA]: La hora solicitada (${reqTime}) está OCUPADA. Infórmale al usuario que no está disponible y oférecele las alternativas de la lista LIBRES.`;
+  if (requestedSlot?.time) {
+    const isFree = availability?.available_slots.includes(requestedSlot.time);
+    slotStatus = isFree ? `✅ HORA ${requestedSlot.time} DISPONIBLE.` : `❌ HORA ${requestedSlot.time} OCUPADA.`;
   }
 
-  // Si ya tenemos todos los datos capturados, inyectamos instrucción directa
-  const allDataReady = collectedData?.name && collectedData?.date && collectedData?.time;
-  const confirmedBlock = allDataReady ? `
+  // 4. INSTRUCCIÓN CRÍTICA
+  let instruction = '';
+  if (allDataReady && slotStatus.includes('✅')) {
+    instruction = `
+ORDEN SUPREMA: EL PACIENTE YA DIO TODO Y LA HORA ESTÁ LIBRE. 
+DEBES AGENDAR AHORA MISMO USANDO ESTE FORMATO EXACTO:
+"✓ Cita agendada. Paciente: ${collectedData!.name}, Día: ${collectedData!.date}, Hora: ${collectedData!.time}, Servicio: ${collectedData!.service || 'Consulta'}."
+No saludes de nuevo, no pidas confirmación, solo escribe esa línea y despídete amablemente.
+`;
+  } else {
+    instruction = `
+OBJETIVO: Agendar la cita. 
+- Datos actuales: Nombre: ${collectedData?.name || 'FALTA'}, Fecha/Hora: ${collectedData?.date || 'FALTA'} ${collectedData?.time || ''}.
+- Si falta algo, pídelo de forma natural.
+- Si la hora está ocupada, ofrece: ${availableText}.
+`;
+  }
 
-⚡ DATOS YA CONFIRMADOS POR EL PACIENTE (NO vuelvas a pedir estos datos):
-- Nombre: ${collectedData!.name}
-- Fecha: ${collectedData!.date}
-- Hora: ${collectedData!.time}
-- Servicio: ${collectedData!.service || 'Consulta'}
-${slotStatus.includes('LIBRE') ? 'La hora está disponible → AGENDA LA CITA AHORA con el formato exacto de la regla 1A.' : slotStatus}
-` : '';
+  return `
+Asistente de ${business.name}. Hoy: ${currentDate}.
+Ubicación: ${business.location}
+Servicios: ${Array.isArray(business.services) ? business.services.join(', ') : business.services}
 
-  return `${baseContext}
+${business.prompt_custom ? `Nota: ${business.prompt_custom}` : ''}
 
-DISPONIBILIDAD EN VIVO - ${availability.date_label}:
-- Horarios OCUPADOS: ${occupiedText}
-- Horarios LIBRES: ${availableText}
+DISPONIBILIDAD PARA EL DÍA:
+- Libres: ${availableText}
 ${slotStatus}
-${confirmedBlock}
 
-${upcomingAppointments.length > 0 ? `
-El paciente ACTUALMENTE tiene las siguientes citas programadas en tu clínica:
-${upcomingAppointments.map(a => `- ID [${a.id}]: ${a.service} el ${new Date(a.date_time).toLocaleString('es-CL')}`).join('\n')}
-(Si el paciente menciona reagendar o cancelar su cita, asume que habla de esto y actúa conforme a las reglas 1B y 1C).
-` : ''}
+${instruction}
 
-REGLAS CRÍTICAS:
-0. NUNCA pidas datos que el paciente ya proporcionó en mensajes anteriores. Lee el historial.
-1A. Si la hora pedida está LIBRE y tienes el nombre del paciente → responde EXACTAMENTE con este formato, sin excepciones:
-   "✓ Cita agendada. Paciente: [Nombre Apellido], Día: [día], Hora: [hora], Servicio: [servicio]."
-   Para detectar el nombre: el paciente debe proporcionar nombre y apellido (ej: "Juan Pérez"). Si solo da un nombre, pídele el apellido.
-1B. Si el paciente pide CANCELAR una cita suya ya existente → responde EXACTAMENTE con este formato:
-   "✓ Cita cancelada. ID: [id de la cita]."
-1C. Si el paciente pide REAGENDAR una cita a un nuevo horario y el nuevo horario está LIBRE → responde EXACTAMENTE con este formato:
-   "✓ Cita reagendada. ID: [id antigua cita], Día: [nuevo día], Hora: [nueva hora]."
-2. Si la hora pedida está OCUPADA → di: "Esa hora no está disponible. Tengo libre: [lista alternativas]"
-3. Si no mencionan hora → pregunta qué hora prefieren y muéstrales las disponibles.
-4. NUNCA confirmes una cita en una hora que aparece como OCUPADA.
-5. Sé breve y amable.`;
+FORMATOS OBLIGATORIOS:
+- Agendar: "✓ Cita agendada. Paciente: [Nombre Apellido], Día: [día], Hora: [hora], Servicio: [servicio]."
+- Cancelar: "✓ Cita cancelada. ID: [id]."
+- Reagendar: "✓ Cita reagendada. ID: [id], Día: [día], Hora: [hora]."
+`.trim();
+}
 }
 
 // ─── 6. Detectar si el bot confirmó, canceló o reagendó ───────────────────
