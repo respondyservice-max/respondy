@@ -445,40 +445,26 @@ export function createDynamicPrompt(
   const availableText = availability?.occupied_times.includes('CERRADO') ? 'CERRADO' : (availability?.available_slots.join(', ') || 'Ninguno');
 
   // 1. INSTRUCCIÓN PRIORITARIA
-  let statusInfo = '';
+  let systemStatus = "";
   if (allDataReady) {
-    statusInfo = `
-[SISTEMA]: TODOS LOS DATOS ESTÁN LISTOS. 
-Paciente: ${collectedData!.name}
-Fecha: ${collectedData!.date}
-Hora: ${collectedData!.time}
-ACCION: Confirma la cita ahora con el formato obligatorio: "✓ Cita agendada. Paciente: ${collectedData!.name}, Día: ${collectedData!.date}, Hora: ${collectedData!.time}, Servicio: ${collectedData!.service || 'Consulta'}."
-`;
+    systemStatus = `[SISTEMA] DATOS OK. Paciente: ${collectedData!.name}, Día: ${collectedData!.date}, Hora: ${collectedData!.time}. ACCIÓN: CONFIRMA AHORA.`;
   } else {
-    const missing = [];
-    if (!hasName) missing.push('Nombre Completo');
-    if (!hasDate) missing.push('Fecha');
-    if (!hasTime) missing.push('Hora');
-    
-    statusInfo = `
-[SISTEMA]: Faltan datos para agendar: ${missing.join(', ')}.
-- Datos conocidos: Paciente: ${collectedData?.name || 'DESCONOCIDO'}, Día: ${collectedData?.date || 'PENDIENTE'}, Hora: ${collectedData?.time || 'PENDIENTE'}.
-- Disponibilidad para hoy: ${availableText}.
-`;
+    systemStatus = `[SISTEMA] Faltan datos (Nombre: ${collectedData?.name || '?'}, Día: ${collectedData?.date || '?'}, Hora: ${collectedData?.time || '?'}). Disponibilidad ${collectedData?.date || 'hoy'}: ${availableText}.`;
   }
 
   return `
-${statusInfo}
+${systemStatus}
 
 Eres el asistente de ${business.name}.
-REGLA DE ORO: Si ya conoces el nombre del paciente (${collectedData?.name || 'desconocido'}), NO lo vuelvas a preguntar nunca.
-REGLA DE ORO 2: Nunca pidas fecha de nacimiento ni RUT. No son necesarios.
+IMPORTANTE: El texto que empieza por [SISTEMA] es solo para ti, NUNCA lo escribas ni lo repitas al usuario.
 
-Instrucciones: ${business.prompt_custom || 'Ayuda a agendar la cita.'}
+REGLAS:
+- Si ya sabes el nombre (${collectedData?.name || 'desconocido'}), no lo preguntes.
+- Si falta la fecha o la hora, pídela amablemente.
+- Si la hora está ocupada, ofrece: ${availableText}.
+- Para agendar usa: "✓ Cita agendada. Paciente: [Nombre], Día: [día], Hora: [hora], Servicio: [servicio]."
 
-FORMATOS:
-- Agendar: "✓ Cita agendada. Paciente: [Nombre Apellido], Día: [día], Hora: [hora], Servicio: [servicio]."
-- No disponible: "Esa hora está ocupada. Tengo libre: ${availableText}"
+${business.prompt_custom || 'Ayuda a agendar.'}
 `.trim();
 }
 
