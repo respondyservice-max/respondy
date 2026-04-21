@@ -77,6 +77,7 @@ export async function POST(request: NextRequest) {
     const normalizedPhone = phoneFrom.replace('+', '');
 
     // ── 2. Obtener historial previo (solo mensajes antiguos) ──────────────────
+    // ── 2. Obtener historial previo ──────────────────
     const { data: previousMessages } = await supabaseAdmin
       .from('conversations')
       .select('message_type, message_text')
@@ -85,44 +86,39 @@ export async function POST(request: NextRequest) {
       .order('created_at', { ascending: false })
       .limit(15);
 
-    // Combinar historial previo con el mensaje actual
-    // Incluimos mensajes del asistente para rescatar nombres ya confirmados
     const historyText = (previousMessages || [])
       .map(m => m.message_text)
       .reverse();
-    const combinedContext = [...historyText, messageText].join(' | ');
-    console.log('Contexto para parseo (enriquecido):', combinedContext);
+    const combinedContext = [...historyText, messageText].join(' ');
+    console.log('Contexto para parseo:', combinedContext);
 
-    // ── 3. Parsear con contexto enriquecido ───────────────────────────────────
+    // ── 3. Parsear datos ──
     const parsed = parseClientMessage(combinedContext);
-    console.log('Intención detectada (contexto combinado):', parsed);
+    
+    // ── 3.1 MEMORIA PERSISTENTE (Si el parseo falla, buscamos en DB) ──
+    let persistentName = parsed.patientName;
+    if (!persistentName) {
+      const { data: pastAppts } = await supabaseAdmin
+        .from('appointments')
+        .select('patient_name')
+        .eq('business_id', targetBusiness.id)
+        .ilike('patient_phone', `%${normalizedPhone}%`)
+        .order('created_at', { ascending: false })
+        .limit(1);
+      if (pastAppts?.[0]) persistentName = pastAppts[0].patient_name;
+    }
 
-    // ── 3. Verificar disponibilidad si hay fecha/hora ─────────────────────────
+    // ── 3.2 Verificar disponibilidad ──
     let availability = null;
-    const requestedSlot = (parsed.date && parsed.time) ? { date: parsed.date, time: parsed.time } : null;
+    const finalDate = parsed.date;
+    const finalTime = parsed.time;
+    const requestedSlot = (finalDate && finalTime) ? { date: finalDate, time: finalTime } : null;
 
-    const hasCalendar = !!targetBusiness.google_calendar_access_token_encrypted;
-    const isAppointmentRequest = !!(parsed.date && (parsed.service || parsed.time));
-
-    if (hasCalendar && isAppointmentRequest && parsed.date) {
+    if (!!targetBusiness.google_calendar_access_token_encrypted && finalDate) {
       try {
-        console.log('Consultando disponibilidad en Google Calendar para:', parsed.date);
-        availability = await checkAvailability(targetBusiness, parsed.date, 45);
-
-        // Si tiene slot solicitado, marcar si está disponible
-        if (parsed.time) {
-          availability.requested_slot = parsed.time;
-          availability.is_available = availability.available_slots.includes(parsed.time);
-        }
-
-        console.log('Disponibilidad obtenida:', {
-          date_label: availability.date_label,
-          available: availability.available_slots.length,
-          occupied: availability.occupied_times.length,
-          is_available: availability.is_available,
-        });
+        availability = await checkAvailability(targetBusiness, finalDate, 45);
       } catch (calErr) {
-        console.error('Error consultando Calendar (continuando sin disponibilidad):', calErr);
+        console.error('Error Calendar:', calErr);
       }
     }
 
@@ -147,7 +143,7 @@ export async function POST(request: NextRequest) {
       availability,
       requestedSlot,
       upcomingAppointments,
-      { name: parsed.patientName, date: parsed.date, time: parsed.time, service: parsed.service }
+      { name: persistentName, date: finalDate, time: finalTime, service: parsed.service }
     );
     console.log('Prompt dinámico creado para Groq.');
 
