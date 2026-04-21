@@ -366,9 +366,10 @@ export function parseClientMessage(text: string): ParsedAppointment {
   // Intentar extraer hora con múltiples patrones, del más específico al más general
   const timePatterns: Array<{ re: RegExp; hourGrp: number; minGrp: number | null; merGrp: number | null }> = [
     { re: /(\d{1,2}):(\d{2})\s*(am|pm)?/i, hourGrp: 1, minGrp: 2, merGrp: 3 },   // 10:30, 10:30am
-    { re: /(\d{1,2})\s*(?:hrs|horas)/i,     hourGrp: 1, minGrp: null, merGrp: null }, // 15 hrs, 15 horas
-    { re: /(\d{1,2})\s*(am|pm)/i,           hourGrp: 1, minGrp: null, merGrp: 2 }, // 9am, 9 am
+    { re: /(\d{1,2})\s*(?:hrs|horas)/i,     hourGrp: 1, minGrp: null, merGrp: null }, // 15 hrs
+    { re: /(\d{1,2})\s*(am|pm)/i,           hourGrp: 1, minGrp: null, merGrp: 2 }, // 9am
     { re: /a las (\d{1,2})/i,               hourGrp: 1, minGrp: null, merGrp: null }, // a las 9
+    { re: /\b(\d{1,2})\b/,                  hourGrp: 1, minGrp: null, merGrp: null }, // 17 (solo número)
   ];
 
   for (const { re, hourGrp, minGrp, merGrp } of timePatterns) {
@@ -440,43 +441,36 @@ export function createDynamicPrompt(
   const isSlotFree = requestedSlot?.time && availability?.available_slots.includes(requestedSlot.time);
   const allDataReady = hasName && hasDate && hasTime && isSlotFree;
 
-  // 1. INSTRUCCIÓN REINA (Si está todo listo, no dejamos que la IA piense, solo que ejecute)
-  let headerOrder = '';
+  // 1. INSTRUCCIÓN PRIORITARIA
+  let statusInfo = '';
   if (allDataReady) {
-    headerOrder = `
-⚠️ ORDEN PRIORITARIA: ¡TODOS LOS DATOS ESTÁN LISTOS!
-NO pidas NADA al paciente (ni nombre, ni confirmación, ni fecha de nacimiento).
-CONFIRMA LA CITA AHORA MISMO con este texto:
-"✓ Cita agendada. Paciente: ${collectedData!.name}, Día: ${collectedData!.date}, Hora: ${collectedData!.time}, Servicio: ${collectedData!.service || 'Consulta'}."
+    statusInfo = `
+[SISTEMA]: TODOS LOS DATOS ESTÁN LISTOS. 
+Paciente: ${collectedData!.name}
+Fecha: ${collectedData!.date}
+Hora: ${collectedData!.time}
+ACCION: Confirma la cita ahora con el formato obligatorio: "✓ Cita agendada. Paciente: ${collectedData!.name}, Día: ${collectedData!.date}, Hora: ${collectedData!.time}, Servicio: ${collectedData!.service || 'Consulta'}."
+`;
+  } else {
+    statusInfo = `
+[SISTEMA]: Faltan datos para agendar.
+- Datos conocidos: Nombre: ${collectedData?.name || 'FALTA'}, Fecha: ${collectedData?.date || 'FALTA'}, Hora: ${collectedData?.time || 'FALTA'}.
+- Disponibilidad para hoy: ${availableText}.
 `;
   }
 
-  const availableText = availability?.occupied_times.includes('CERRADO') ? 'CERRADO' : (availability?.available_slots.join(', ') || 'Ninguno');
-
   return `
-${headerOrder}
+${statusInfo}
 
-Identidad: Asistente virtual de ${business.name}.
-Hoy es: ${currentDate}.
-Reglas de Oro:
-- NUNCA pidas "Fecha de Nacimiento" ni "RUT". No es necesario.
-- Si falta el nombre o el apellido, pídelo amablemente.
-- Si la hora está ocupada, ofrece las alternativas: ${availableText}.
-- Si el paciente dice su nombre (ej: "Pedro Zúñiga"), ya lo tienes, no lo vuelvas a preguntar.
+Eres el asistente de ${business.name}.
+REGLA DE ORO: Si ya conoces el nombre del paciente (${collectedData?.name || 'desconocido'}), NO lo vuelvas a preguntar nunca.
+REGLA DE ORO 2: Nunca pidas fecha de nacimiento ni RUT. No son necesarios.
 
-Contexto actual del sistema:
-- Paciente detectado: ${collectedData?.name || 'Aún no identificado'}
-- Fecha detectada: ${collectedData?.date || 'Aún no definida'}
-- Hora detectada: ${collectedData?.time || 'Aún no definida'}
-- Estado de la hora: ${isSlotFree ? 'DISPONIBLE' : 'OCUPADA/NO DEFINIDA'}
+Instrucciones: ${business.prompt_custom || 'Ayuda a agendar la cita.'}
 
-Instrucciones del negocio:
-${business.prompt_custom || 'Agendar citas.'}
-
-FORMATOS TÉCNICOS OBLIGATORIOS:
+FORMATOS:
 - Agendar: "✓ Cita agendada. Paciente: [Nombre Apellido], Día: [día], Hora: [hora], Servicio: [servicio]."
-- Cancelar: "✓ Cita cancelada. ID: [id]."
-- Reagendar: "✓ Cita reagendada. ID: [id], Día: [día], Hora: [hora]."
+- No disponible: "Esa hora está ocupada. Tengo libre: ${availableText}"
 `.trim();
 }
 
