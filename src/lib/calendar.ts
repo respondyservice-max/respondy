@@ -308,119 +308,57 @@ export function parseClientMessage(text: string): ParsedAppointment {
     }
   }
 
-  // Detectar día de la semana / fecha
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  let date: string | null = null;
+// ─── 5. Parsear mensaje del cliente con IA (GROQ) ─────────────────────────
 
-  const dayMap: Record<string, number> = {
-    'lunes': 1, 'martes': 2, 'miércoles': 3, 'miercoles': 3,
-    'jueves': 4, 'viernes': 5, 'sábado': 6, 'sabado': 6,
-    'domingo': 0, 'domingo ': 0
-  };
+export async function parseClientMessage(history: string): Promise<{
+  date: string | null;
+  time: string | null;
+  patientName: string | null;
+  service: string | null;
+}> {
+  if (!process.env.GROQ_API_KEY) return { date: null, time: null, patientName: null, service: null };
 
-  const monthMap: Record<string, number> = {
-    'enero': 0, 'febrero': 1, 'marzo': 2, 'abril': 3, 'mayo': 4, 'junio': 5,
-    'julio': 6, 'agosto': 7, 'septiembre': 8, 'octubre': 9, 'noviembre': 10, 'diciembre': 11
-  };
+  try {
+    const today = new Date();
+    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: 'llama-3.1-8b-instant',
+        messages: [
+          {
+            role: 'system',
+            content: `Eres un extractor de datos para una clínica dental. Hoy es ${today.toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}.
+            Analiza el historial de chat y extrae los datos del PACIENTE. 
+            Reglas:
+            1. El patientName debe ser el nombre completo del paciente que se atenderá.
+            2. La date debe ser YYYY-MM-DD.
+            3. La time debe ser HH:mm (24h).
+            4. Solo devuelve un objeto JSON puro. Nada más.`,
+          },
+          { role: 'user', content: `Historial de chat: ${history}` },
+        ],
+        temperature: 0,
+        response_format: { type: "json_object" }
+      }),
+    });
 
-  // 1. Intentar detectar fecha específica "24 de abril"
-  const dateSpecificMatch = lower.match(/(\d{1,2})\s+de\s+([a-z]+)/i);
-  if (dateSpecificMatch) {
-    const dayNumeric = parseInt(dateSpecificMatch[1]);
-    const monthName = dateSpecificMatch[2];
-    if (monthMap[monthName] !== undefined) {
-      const targetDate = new Date(today.getFullYear(), monthMap[monthName], dayNumeric);
-      // Si la fecha ya pasó este año, asumir el próximo año
-      if (targetDate < today) targetDate.setFullYear(today.getFullYear() + 1);
-      date = formatDate(targetDate);
-    }
+    const data = await res.json();
+    const result = JSON.parse(data.choices?.[0]?.message?.content || '{}');
+    
+    return {
+      patientName: result.patientName || null,
+      date: result.date || null,
+      time: result.time || null,
+      service: result.service || null
+    };
+  } catch (e) {
+    console.error('Error en parse con IA:', e);
+    return { date: null, time: null, patientName: null, service: null };
   }
-
-  // 2. Si no hubo match específico, intentar días relativos
-  if (!date) {
-    if (lower.includes('hoy') || lower.includes('para hoy')) {
-      date = formatDate(today);
-    } else if (lower.includes('mañana') || lower.includes('manana')) {
-      const tomorrow = new Date(today);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      date = formatDate(tomorrow);
-    } else {
-      for (const [day, dayNum] of Object.entries(dayMap)) {
-        if (lower.includes(day)) {
-          const current = today.getDay();
-          let diff = dayNum - current;
-          if (diff <= 0) diff += 7; // Próximo
-          const target = new Date(today);
-          target.setDate(today.getDate() + diff);
-          date = formatDate(target);
-          break;
-        }
-      }
-    }
-  }
-
-  // Detectar hora (ej: "5PM", "17:00", "a las 5", "5 de la tarde", "9 am")
-  let time: string | null = null;
-
-  // Intentar extraer hora con múltiples patrones, del más específico al más general
-  const timePatterns: Array<{ re: RegExp; hourGrp: number; minGrp: number | null; merGrp: number | null }> = [
-    { re: /(\d{1,2}):(\d{2})\s*(am|pm)?/i, hourGrp: 1, minGrp: 2, merGrp: 3 },   // 10:30, 10:30am
-    { re: /\b(\d{2})(\d{2})\b/, hourGrp: 1, minGrp: 2, merGrp: null }, // 1230, 1500
-    { re: /(\d{1,2})\s*(?:hrs|horas)/i, hourGrp: 1, minGrp: null, merGrp: null }, // 15 hrs
-    { re: /(\d{1,2})\s*(am|pm)/i, hourGrp: 1, minGrp: null, merGrp: 2 }, // 9am
-    { re: /a las (\d{1,2})/i, hourGrp: 1, minGrp: null, merGrp: null }, // a las 9
-    { re: /\b(\d{1,2})\b/, hourGrp: 1, minGrp: null, merGrp: null }, // 17 (solo número)
-  ];
-
-  for (const { re, hourGrp, minGrp, merGrp } of timePatterns) {
-    const match = lower.match(re);
-    if (match) {
-      let hour = parseInt(match[hourGrp]);
-      // minGrp: solo es válido si el grupo es numérico
-      const minRaw = minGrp ? match[minGrp] : null;
-      const minutes = (minRaw && /^\d+$/.test(minRaw)) ? parseInt(minRaw) : 0;
-      const meridiem = (merGrp && match[merGrp] ? match[merGrp] : '').toLowerCase();
-      if (meridiem === 'pm' && hour < 12) hour += 12;
-      if (meridiem === 'am' && hour === 12) hour = 0;
-      // Heurística: si no hay AM/PM y hora <= 8, asumir PM
-      if (!meridiem && hour >= 1 && hour <= 8) hour += 12;
-      if (!isNaN(hour)) {
-        time = `${String(hour).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
-      }
-      break;
-    }
-  }
-
-  // Detectar nombre del paciente
-  let patientName: string | null = null;
-  // 1. Formato estructurado "Paciente: [Nombre]"
-  const nameMatchFormatted = text.match(/paciente:\s*([A-Z\u00C0-\u024FñÑ][a-z\u00C0-\u024FñÑ]+(?:\s+[A-Z\u00C0-\u024FñÑ][a-z\u00C0-\u024FñÑ]+)+)/i);
-  // 2. Con prefijos "me llamo", "soy", etc.
-  const nameMatchPrefix = text.match(/(?:me llamo|soy|nombre es|nombre[:\s]+)\s+([A-Z\u00C0-\u024FñÑ][a-z\u00C0-\u024FñÑ]+(?:\s+[A-Z\u00C0-\u024FñÑ][a-z\u00C0-\u024FñÑ]+)?)/i);
-  // 3. Nombre bare: dos palabras capitalizadas que no sean días/meses
-  const ignorePhrases = new Set(['Fecha', 'Hora', 'Servicio', 'Limpieza', 'Jueves', 'Lunes', 'Martes', 'Miércoles', 'Miercoles', 'Viernes', 'Sábado', 'Sabado', 'Domingo', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Hola', 'Quiero', 'Necesito', 'Buenos', 'Entonces', 'Cita', 'Agendar']);
-  const bareNameMatch = text.match(/\b([A-Z\u00C0-\u024FñÑ][a-z\u00C0-\u024FñÑ]{1,}(?:\s+[A-Z\u00C0-\u024FñÑ][a-z\u00C0-\u024FñÑ]{1,})?)\b/);
-
-  if (nameMatchFormatted) {
-    patientName = nameMatchFormatted[1].trim();
-  } else if (nameMatchPrefix) {
-    patientName = nameMatchPrefix[1].trim();
-  } else if (bareNameMatch) {
-    const candidate = bareNameMatch[1].trim();
-    const words = candidate.split(' ');
-    if (words.length >= 2 && !ignorePhrases.has(words[0])) {
-      patientName = candidate;
-    }
-  }
-
-  // Detectar servicio en el formato IA si está presente ("Servicio: Limpieza")
-  const serviceMatchFormatted = text.match(/servicio:\s*([A-Za-z\u00C0-\u024FñÑ ]+?)(?:,|$|\n)/i);
-  if (serviceMatchFormatted) {
-    service = serviceMatchFormatted[1].trim();
-  }
-
-  return { service, date, time, patientName };
 }
 
 // ─── 5. Crear prompt dinámico para Groq con disponibilidad real ──────────────

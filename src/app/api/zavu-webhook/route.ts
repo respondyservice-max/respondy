@@ -92,8 +92,8 @@ export async function POST(request: NextRequest) {
     const combinedContext = [...historyText, messageText].join(' ');
     console.log('Contexto para parseo:', combinedContext);
 
-    // ── 3. Parsear datos ──
-    const parsed = parseClientMessage(combinedContext);
+    // ── 3. Parsear datos (ahora con IA asíncrona) ──
+    const parsed = await parseClientMessage(combinedContext);
     
     // ── 3.1 MEMORIA PERSISTENTE (Si el parseo falla, buscamos en DB) ──
     let persistentName = parsed.patientName;
