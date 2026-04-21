@@ -77,7 +77,7 @@ export async function POST(request: NextRequest) {
     const normalizedPhone = phoneFrom.replace('+', '');
 
     // ── 2. Obtener historial previo (solo mensajes antiguos) ──────────────────
-    // ── 2. Obtener historial previo ──────────────────
+    // ── 2. Obtener historial previo estructurado ──────────────────
     const { data: previousMessages } = await supabaseAdmin
       .from('conversations')
       .select('message_type, message_text')
@@ -87,10 +87,12 @@ export async function POST(request: NextRequest) {
       .limit(15);
 
     const historyText = (previousMessages || [])
-      .map(m => m.message_text)
-      .reverse();
-    const combinedContext = [...historyText, messageText].join(' ');
-    console.log('Contexto para parseo:', combinedContext);
+      .reverse()
+      .map(m => `${m.message_type === 'incoming' ? 'Usuario' : 'Asistente'}: ${m.message_text}`)
+      .join('\n');
+    
+    const combinedContext = `${historyText}\nUsuario: ${messageText}`;
+    console.log('Contexto para parseo (estructurado):\n', combinedContext);
 
     // ── 3. Parsear datos (ahora con IA asíncrona) ──
     const parsed = await parseClientMessage(combinedContext);
@@ -240,7 +242,7 @@ export async function POST(request: NextRequest) {
 
       patientName = patientName || `Paciente (${phoneFrom})`;
 
-      if (finalDate && finalTime) {
+      if (finalDate && finalTime && patientName) {
         const eventResult = await createCalendarEvent(targetBusiness, {
           patientName,
           patientPhone: normalizedPhone,

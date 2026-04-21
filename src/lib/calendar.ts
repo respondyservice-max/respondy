@@ -344,10 +344,14 @@ export async function parseClientMessage(history: string): Promise<{
         messages: [
           {
             role: 'system',
-            content: `Eres un extractor técnico. Hoy es ${today.toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}.
-            Extrae Nombre, Fecha (YYYY-MM-DD) y Hora (HH:mm) del historial.
-            IMPORTANTE: Si el usuario dijo "Viernes 24", extrae "2026-04-24". Si dijo "17:00" o "las 5", extrae "17:00".
-            Devuelve SOLO JSON: {"patientName": string, "date": string, "time": string, "service": string}`,
+            content: `Eres un extractor técnico de datos. Hoy es ${today.toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}.
+            
+            Tu única misión es extraer los datos del paciente analizando TODO el historial. 
+            Reglas críticas:
+            1. El patientName debe ser el nombre completo del paciente. Si ya lo dijo antes, MANTENLO siempre.
+            2. La date debe ser YYYY-MM-DD.
+            3. La time debe ser HH:mm (24h). "12 del día" = 12:00. "las 5" = 17:00.
+            4. Solo devuelve un objeto JSON puro: {"patientName": string, "date": string, "time": string, "service": string}`,
           },
           { role: 'user', content: `Chat: ${history}` },
         ],
