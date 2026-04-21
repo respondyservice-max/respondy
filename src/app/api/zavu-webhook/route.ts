@@ -3,11 +3,11 @@ export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { decrypt } from '@/lib/crypto';
-import { 
-  checkAvailability, 
-  parseClientMessage, 
-  createDynamicPrompt, 
-  createCalendarEvent, 
+import {
+  checkAvailability,
+  parseClientMessage,
+  createDynamicPrompt,
+  createCalendarEvent,
   extractConfirmation,
   extractCancellation,
   extractReschedule,
@@ -75,7 +75,7 @@ export async function POST(request: NextRequest) {
 
     // Normalizar teléfono (quitar el + para búsquedas consistentes)
     const normalizedPhone = phoneFrom.replace('+', '');
-    
+
     // ── 2. Obtener historial previo (solo mensajes antiguos) ──────────────────
     const { data: previousMessages } = await supabaseAdmin
       .from('conversations')
@@ -135,7 +135,7 @@ export async function POST(request: NextRequest) {
         .eq('business_id', targetBusiness.id)
         .gte('date_time', new Date().toISOString())
         .ilike('patient_phone', `%${normalizedPhone}%`);
-        
+
       if (currentAppts) upcomingAppointments = currentAppts;
     } catch (e) {
       console.error('Error buscando citas del paciente', e);
@@ -143,9 +143,9 @@ export async function POST(request: NextRequest) {
 
     // ── 4. Crear prompt dinámico para Groq ────────────────────────────────────
     const dynamicPrompt = createDynamicPrompt(
-      targetBusiness, 
-      availability, 
-      requestedSlot, 
+      targetBusiness,
+      availability,
+      requestedSlot,
       upcomingAppointments,
       { name: parsed.patientName, date: parsed.date, time: parsed.time, service: parsed.service }
     );
@@ -192,7 +192,7 @@ export async function POST(request: NextRequest) {
     console.log('Respuesta de Groq:', botResponse);
 
     // ── 6. Si el bot confirmó, canceló o reagendó ────────────────────────────
-    
+
     // CASO A: REAGENDAR
     const rescheduleData = extractReschedule(botResponse);
     if (hasCalendar && rescheduleData) {
@@ -207,7 +207,7 @@ export async function POST(request: NextRequest) {
         const startDateTime = new Date(`${rescheduleData.date}T${rescheduleData.time}:00`);
         await supabaseAdmin.from('appointments').update({ date_time: startDateTime.toISOString() }).eq('id', apptToMove.id);
       }
-    } 
+    }
     // CASO B: CANCELAR
     else if (hasCalendar && extractCancellation(botResponse)) {
       const cancelId = extractCancellation(botResponse);
@@ -239,7 +239,7 @@ export async function POST(request: NextRequest) {
         finalService = parsed.service || botParsed.service || 'Consulta';
         patientName = patientName || botParsed.patientName;
       }
-      
+
       patientName = patientName || `Paciente (${phoneFrom})`;
 
       if (finalDate && finalTime) {

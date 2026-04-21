@@ -133,7 +133,7 @@ export async function checkAvailability(
     const start = event.start?.dateTime;
     if (start) {
       const d = new Date(start);
-      occupied_times.push(`${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`);
+      occupied_times.push(`${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`);
     }
   }
 
@@ -143,7 +143,7 @@ export async function checkAvailability(
   const end = new Date(`${date}T${dayEnd}:00`);
 
   while (current <= new Date(end.getTime() - durationMinutes * 60 * 1000)) {
-    const slot = `${String(current.getHours()).padStart(2,'0')}:${String(current.getMinutes()).padStart(2,'0')}`;
+    const slot = `${String(current.getHours()).padStart(2, '0')}:${String(current.getMinutes()).padStart(2, '0')}`;
     if (!occupied_times.includes(slot)) {
       available_slots.push(slot);
     }
@@ -250,10 +250,10 @@ export async function deleteCalendarEvent(business: any, googleEventId: string):
 }
 
 export async function updateCalendarEvent(
-  business: any, 
-  googleEventId: string, 
-  newDate: string, 
-  newTime: string, 
+  business: any,
+  googleEventId: string,
+  newDate: string,
+  newTime: string,
   durationMinutes: number = 45
 ): Promise<boolean> {
   try {
@@ -264,7 +264,7 @@ export async function updateCalendarEvent(
     dateObj.setMinutes(dateObj.getMinutes() + durationMinutes);
     const getHHMM = (d: Date) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
     const endTimeString = getHHMM(dateObj);
-    
+
     await calendar.events.patch({
       calendarId: business.google_calendar_id || 'primary',
       eventId: googleEventId,
@@ -366,11 +366,11 @@ export function parseClientMessage(text: string): ParsedAppointment {
   // Intentar extraer hora con múltiples patrones, del más específico al más general
   const timePatterns: Array<{ re: RegExp; hourGrp: number; minGrp: number | null; merGrp: number | null }> = [
     { re: /(\d{1,2}):(\d{2})\s*(am|pm)?/i, hourGrp: 1, minGrp: 2, merGrp: 3 },   // 10:30, 10:30am
-    { re: /\b(\d{2})(\d{2})\b/,             hourGrp: 1, minGrp: 2, merGrp: null }, // 1230, 1500
-    { re: /(\d{1,2})\s*(?:hrs|horas)/i,     hourGrp: 1, minGrp: null, merGrp: null }, // 15 hrs
-    { re: /(\d{1,2})\s*(am|pm)/i,           hourGrp: 1, minGrp: null, merGrp: 2 }, // 9am
-    { re: /a las (\d{1,2})/i,               hourGrp: 1, minGrp: null, merGrp: null }, // a las 9
-    { re: /\b(\d{1,2})\b/,                  hourGrp: 1, minGrp: null, merGrp: null }, // 17 (solo número)
+    { re: /\b(\d{2})(\d{2})\b/, hourGrp: 1, minGrp: 2, merGrp: null }, // 1230, 1500
+    { re: /(\d{1,2})\s*(?:hrs|horas)/i, hourGrp: 1, minGrp: null, merGrp: null }, // 15 hrs
+    { re: /(\d{1,2})\s*(am|pm)/i, hourGrp: 1, minGrp: null, merGrp: 2 }, // 9am
+    { re: /a las (\d{1,2})/i, hourGrp: 1, minGrp: null, merGrp: null }, // a las 9
+    { re: /\b(\d{1,2})\b/, hourGrp: 1, minGrp: null, merGrp: null }, // 17 (solo número)
   ];
 
   for (const { re, hourGrp, minGrp, merGrp } of timePatterns) {
@@ -386,7 +386,7 @@ export function parseClientMessage(text: string): ParsedAppointment {
       // Heurística: si no hay AM/PM y hora <= 8, asumir PM
       if (!meridiem && hour >= 1 && hour <= 8) hour += 12;
       if (!isNaN(hour)) {
-        time = `${String(hour).padStart(2,'0')}:${String(minutes).padStart(2,'0')}`;
+        time = `${String(hour).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
       }
       break;
     }
@@ -399,9 +399,9 @@ export function parseClientMessage(text: string): ParsedAppointment {
   // 2. Con prefijos "me llamo", "soy", etc.
   const nameMatchPrefix = text.match(/(?:me llamo|soy|nombre es|nombre[:\s]+)\s+([A-Z\u00C0-\u024FñÑ][a-z\u00C0-\u024FñÑ]+(?:\s+[A-Z\u00C0-\u024FñÑ][a-z\u00C0-\u024FñÑ]+)?)/i);
   // 3. Nombre bare: dos palabras capitalizadas que no sean días/meses
-  const ignorePhrases = new Set(['Fecha','Hora','Servicio','Limpieza','Jueves','Lunes','Martes','Miércoles','Miercoles','Viernes','Sábado','Sabado','Domingo','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Hola','Quiero','Necesito','Buenos','Entonces','Cita','Agendar']);
+  const ignorePhrases = new Set(['Fecha', 'Hora', 'Servicio', 'Limpieza', 'Jueves', 'Lunes', 'Martes', 'Miércoles', 'Miercoles', 'Viernes', 'Sábado', 'Sabado', 'Domingo', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Hola', 'Quiero', 'Necesito', 'Buenos', 'Entonces', 'Cita', 'Agendar']);
   const bareNameMatch = text.match(/\b([A-Z\u00C0-\u024FñÑ][a-z\u00C0-\u024FñÑ]{1,}(?:\s+[A-Z\u00C0-\u024FñÑ][a-z\u00C0-\u024FñÑ]{1,})?)\b/);
-  
+
   if (nameMatchFormatted) {
     patientName = nameMatchFormatted[1].trim();
   } else if (nameMatchPrefix) {
@@ -442,37 +442,39 @@ export function createDynamicPrompt(
   const isSlotFree = requestedSlot?.time && availability?.available_slots.includes(requestedSlot.time);
   const allDataReady = hasName && hasDate && hasTime && isSlotFree;
 
-  const availableText = availability?.occupied_times.includes('CERRADO') ? 'CERRADO' : (availability?.available_slots.join(', ') || 'Ninguno');
+  // 1. FICHA TÉCNICA (ESTADO ABSOLUTO)
+  const availableText = availability?.occupied_times.includes('CERRADO') ? 'CERRADO (No atendemos)' : (availability?.available_slots.join(', ') || 'Sin cupos');
+  
+  const statusMemo = `
+### FICHA DE AGENDAMIENTO REAL-TIME ###
+- PACIENTE: ${collectedData?.name || 'DESCONOCIDO'}
+- FECHA: ${collectedData?.date || 'PENDIENTE'}
+- HORA: ${collectedData?.time || 'PENDIENTE'}
+- ESTADO CALENDAR: ${allDataReady ? '✅ HORA LIBRE' : (requestedSlot?.time && !isSlotFree ? '❌ OCUPADA' : '⏳ VERIFICANDO')}
+- OPCIONES DISPONIBLES: ${availableText}
+#######################################
+`;
 
-  // 1. INSTRUCCIÓN PRIORITARIA (SEMÁFORO DE CALENDAR)
-  let systemStatus = "";
+  let flowInstruction = '';
   if (allDataReady) {
-    systemStatus = `[SISTEMA] DISPONIBILIDAD CONFIRMADA EN GOOGLE CALENDAR.
-ACCION: Responde ÚNICAMENTE con la confirmación oficial:
+    flowInstruction = `ORDEN SUPREMA: ¡AGENDAR AHORA! Responde exactamente con la confirmación oficial:
 "✓ Cita agendada. Paciente: ${collectedData!.name}, Día: ${collectedData!.date}, Hora: ${collectedData!.time}, Servicio: ${collectedData!.service || 'Consulta'}."`;
+  } else if (requestedSlot?.time && !isSlotFree) {
+    flowInstruction = `ORDEN: Hora ocupada. Di: "Esa hora no está disponible. Tengo estas opciones libres para el ${collectedData?.date}: ${availableText}. ¿Cuál te acomoda?"`;
   } else {
-    // Si hay hora pero está ocupada
-    const slotBusy = requestedSlot?.time && !isSlotFree;
-    systemStatus = `[SISTEMA] CONSULTA DE DISPONIBILIDAD:
-- Paciente: ${collectedData?.name || 'DESCONOCIDO'}
-- Fecha Solicitada: ${collectedData?.date || 'PENDIENTE'}
-- Hora Solicitada: ${collectedData?.time || 'PENDIENTE'}
-- Estado: ${slotBusy ? '❌ OCUPADA' : '⏳ ESPERANDO DATOS'}
-- Horas Libres en Calendar para este día: ${availableText}`;
+    flowInstruction = `ORDEN: Pide SOLO lo que dice PENDIENTE o DESCONOCIDO. Sé muy breve.
+- Si falta nombre: "¿A nombre de quién agendamos?"
+- Si falta fecha/hora: Ofrece estas opciones: ${availableText}`;
   }
 
   return `
-${systemStatus}
+${statusMemo}
+${flowInstruction}
 
-Eres el asistente de ${business.name}. Tu obligación es cerrar la cita SOLO cuando el sistema te dé luz verde ([SISTEMA] DISPONIBILIDAD CONFIRMADA).
+Eres el asistente automático de Clínica Smile. Sé muy breve, seco y directo como un chatbot. No pidas perdón ni uses frases largas.
+NUNCA repitas el texto que empieza por ###. Es solo para tu memoria.
 
-REGLAS CRÍTICAS:
-1. NUNCA inventes una cita si el sistema dice que la hora está OCUPADA.
-2. Si la hora está ocupada o no la han dicho, ofrece SIEMPRE estas opciones: ${availableText}.
-3. Si el paciente no ha dado su nombre completo, pídelo antes de agendar.
-4. NUNCA repitas el texto que empieza por [SISTEMA].
-
-Instrucciones: ${business.prompt_custom || 'Ayuda a agendar.'}
+${business.prompt_custom || ''}
 `.trim();
 }
 
@@ -480,9 +482,9 @@ Instrucciones: ${business.prompt_custom || 'Ayuda a agendar.'}
 
 export function extractConfirmation(botResponse: string): boolean {
   const lower = botResponse.toLowerCase();
-  return lower.includes('✓ cita agendada') || 
-         lower.includes('cita agendada para el') ||
-         lower.includes('cita confirmada');
+  return lower.includes('✓ cita agendada') ||
+    lower.includes('cita agendada para el') ||
+    lower.includes('cita confirmada');
 }
 
 export function extractCancellation(botResponse: string): string | null {
@@ -504,7 +506,7 @@ export function extractReschedule(botResponse: string): { id: string, date: stri
 // ─── Utilidades internas ─────────────────────────────────────────────────────
 
 function formatDate(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 function parseSchedule(schedule: string): { start: string; end: string } {
@@ -521,8 +523,8 @@ function parseSchedule(schedule: string): { start: string; end: string } {
   if (endM === 'PM' && endH < 12) endH += 12;
 
   return {
-    start: `${String(startH).padStart(2,'0')}:00`,
-    end: `${String(endH).padStart(2,'0')}:00`,
+    start: `${String(startH).padStart(2, '0')}:00`,
+    end: `${String(endH).padStart(2, '0')}:00`,
   };
 }
 
