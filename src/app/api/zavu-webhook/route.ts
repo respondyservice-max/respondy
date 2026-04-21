@@ -261,13 +261,13 @@ export async function POST(request: NextRequest) {
         await supabaseAdmin.from('appointments').delete().eq('id', apptToCancel.id);
       }
     }
-    // CASO C: AGENDAR NUEVA
+      // CASO C: AGENDAR NUEVA
     else if (extractConfirmation(botResponse) && hasCalendar) {
       console.log('✅ Cita confirmada por el bot. Creando evento en Google Calendar...');
-      let finalDate = parsed.date;
-      let finalTime = parsed.time;
+      let finalDate = finalDateStr;
+      let finalTime = finalTimeStr;
       let finalService = parsed.service || 'Consulta';
-      let patientName = parsed.patientName;
+      let patientName = finalName;
 
       // Si el mensaje del usuario no tenía fecha o hora (ej: "sí, confirmo"),
       // intentamos extraerlos de la respuesta de confirmación del bot
@@ -283,7 +283,7 @@ export async function POST(request: NextRequest) {
 
       if (finalDate && finalTime && patientName) {
         const eventResult = await createCalendarEvent(targetBusiness, {
-          patientName,
+          patientName: patientName,
           patientPhone: normalizedPhone,
           service: finalService,
           date: finalDate,

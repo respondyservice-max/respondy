@@ -348,9 +348,10 @@ export async function parseClientMessage(history: string): Promise<{
             
             Tu única misión es extraer los datos del paciente analizando TODO el historial. 
             Reglas críticas:
-            1. El patientName debe ser el nombre completo del paciente. Si ya lo dijo antes, MANTENLO siempre.
+            1. El patientName debe ser el nombre completo. Si ya se detectó en el historial, NO lo borres, mantenlo siempre.
             2. La date debe ser YYYY-MM-DD.
-            3. La time debe ser HH:mm (24h). "12 del día" = 12:00. "las 5" = 17:00.
+            3. La time debe ser HH:mm (24h). 
+               IMPORTANTE: En una clínica dental, si el usuario dice "a las 4", "a las 5", "a las 2", etc. (números del 1 al 7), asume SIEMPRE que son de la tarde (13:00 a 19:00). Ejemplo: "a las 4" -> "16:00".
             4. Solo devuelve un objeto JSON puro: {"patientName": string, "date": string, "time": string, "service": string}`,
           },
           { role: 'user', content: `Chat: ${history}` },
