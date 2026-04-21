@@ -444,27 +444,35 @@ export function createDynamicPrompt(
 
   const availableText = availability?.occupied_times.includes('CERRADO') ? 'CERRADO' : (availability?.available_slots.join(', ') || 'Ninguno');
 
-  // 1. INSTRUCCIÓN PRIORITARIA
+  // 1. INSTRUCCIÓN PRIORITARIA (SEMÁFORO DE CALENDAR)
   let systemStatus = "";
   if (allDataReady) {
-    systemStatus = `[SISTEMA] DATOS OK. Paciente: ${collectedData!.name}, Día: ${collectedData!.date}, Hora: ${collectedData!.time}. ACCIÓN: CONFIRMA AHORA.`;
+    systemStatus = `[SISTEMA] DISPONIBILIDAD CONFIRMADA EN GOOGLE CALENDAR.
+ACCION: Responde ÚNICAMENTE con la confirmación oficial:
+"✓ Cita agendada. Paciente: ${collectedData!.name}, Día: ${collectedData!.date}, Hora: ${collectedData!.time}, Servicio: ${collectedData!.service || 'Consulta'}."`;
   } else {
-    systemStatus = `[SISTEMA] Faltan datos (Nombre: ${collectedData?.name || '?'}, Día: ${collectedData?.date || '?'}, Hora: ${collectedData?.time || '?'}). Disponibilidad ${collectedData?.date || 'hoy'}: ${availableText}.`;
+    // Si hay hora pero está ocupada
+    const slotBusy = requestedSlot?.time && !isSlotFree;
+    systemStatus = `[SISTEMA] CONSULTA DE DISPONIBILIDAD:
+- Paciente: ${collectedData?.name || 'DESCONOCIDO'}
+- Fecha Solicitada: ${collectedData?.date || 'PENDIENTE'}
+- Hora Solicitada: ${collectedData?.time || 'PENDIENTE'}
+- Estado: ${slotBusy ? '❌ OCUPADA' : '⏳ ESPERANDO DATOS'}
+- Horas Libres en Calendar para este día: ${availableText}`;
   }
 
   return `
 ${systemStatus}
 
-Eres el asistente de ${business.name}.
-IMPORTANTE: El texto que empieza por [SISTEMA] es solo para ti, NUNCA lo escribas ni lo repitas al usuario.
+Eres el asistente de ${business.name}. Tu obligación es cerrar la cita SOLO cuando el sistema te dé luz verde ([SISTEMA] DISPONIBILIDAD CONFIRMADA).
 
-REGLAS:
-- Si ya sabes el nombre (${collectedData?.name || 'desconocido'}), no lo preguntes.
-- Si falta la fecha o la hora, pídela amablemente.
-- Si la hora está ocupada, ofrece: ${availableText}.
-- Para agendar usa: "✓ Cita agendada. Paciente: [Nombre], Día: [día], Hora: [hora], Servicio: [servicio]."
+REGLAS CRÍTICAS:
+1. NUNCA inventes una cita si el sistema dice que la hora está OCUPADA.
+2. Si la hora está ocupada o no la han dicho, ofrece SIEMPRE estas opciones: ${availableText}.
+3. Si el paciente no ha dado su nombre completo, pídelo antes de agendar.
+4. NUNCA repitas el texto que empieza por [SISTEMA].
 
-${business.prompt_custom || 'Ayuda a agendar.'}
+Instrucciones: ${business.prompt_custom || 'Ayuda a agendar.'}
 `.trim();
 }
 
