@@ -91,16 +91,15 @@ export async function POST(request: NextRequest) {
       .eq('business_id', targetBusiness.id)
       .eq('phone_from', normalizedPhone)
       .order('created_at', { ascending: false })
-      .limit(10);
+      .limit(20);
 
-    // Combinar los últimos 4 mensajes del USUARIO para parsear con contexto completo
-    const recentUserMessages = (previousMessages || [])
+    // Combinar TODO el historial reciente para parsear con contexto completo
+    const historyForParsing = (previousMessages || [])
       .filter(m => m.message_type === 'incoming')
-      .slice(0, 4)
       .map(m => m.message_text)
       .reverse();
-    const combinedContext = [...recentUserMessages, messageText].join(' ');
-    console.log('Contexto combinado para parseo:', combinedContext);
+    const combinedContext = historyForParsing.join(' ');
+    console.log('Contexto combinado para parseo (historial completo):', combinedContext);
 
     // ── 3. Parsear con contexto enriquecido ───────────────────────────────────
     const parsed = parseClientMessage(combinedContext);
@@ -183,7 +182,6 @@ export async function POST(request: NextRequest) {
         messages: [
           { role: 'system', content: dynamicPrompt },
           ...chatHistory,
-          { role: 'user', content: messageText },
         ],
         temperature: 0.5,
       }),
