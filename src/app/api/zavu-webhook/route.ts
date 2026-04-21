@@ -73,14 +73,25 @@ export async function POST(request: NextRequest) {
 
     const zavuApiKey = decrypt(targetBusiness.zavu_api_key_encrypted);
 
+    // Normalizar teléfono (quitar el + para búsquedas consistentes)
+    const normalizedPhone = phoneFrom.replace('+', '');
+    
+    // ── 1.5 Guardar el mensaje entrante inmediatamente para que sea parte del historial ──
+    await supabaseAdmin.from('conversations').insert({
+      business_id: targetBusiness.id,
+      phone_from: normalizedPhone,
+      message_text: messageText,
+      message_type: 'incoming',
+    });
+
     // ── 2. Obtener historial para parseo enriquecido ─────────────────────────
     const { data: previousMessages } = await supabaseAdmin
       .from('conversations')
       .select('message_type, message_text')
       .eq('business_id', targetBusiness.id)
-      .eq('phone_from', phoneFrom)
+      .eq('phone_from', normalizedPhone)
       .order('created_at', { ascending: false })
-      .limit(8);
+      .limit(10);
 
     // Combinar los últimos 4 mensajes del USUARIO para parsear con contexto completo
     const recentUserMessages = (previousMessages || [])
@@ -127,13 +138,12 @@ export async function POST(request: NextRequest) {
     // ── 3.5 Buscar citas futuras del paciente ─────────────────────────────────
     let upcomingAppointments = [];
     try {
-      const cleanPhone = phoneFrom.replace('+', '');
       const { data: currentAppts } = await supabaseAdmin
         .from('appointments')
         .select('*')
         .eq('business_id', targetBusiness.id)
         .gte('date_time', new Date().toISOString())
-        .ilike('patient_phone', `%${cleanPhone}%`);
+        .ilike('patient_phone', `%${normalizedPhone}%`);
         
       if (currentAppts) upcomingAppointments = currentAppts;
     } catch (e) {
@@ -244,7 +254,7 @@ export async function POST(request: NextRequest) {
       if (finalDate && finalTime) {
         const eventResult = await createCalendarEvent(targetBusiness, {
           patientName,
-          patientPhone: phoneFrom || 'No especificado',
+          patientPhone: normalizedPhone,
           service: finalService,
           date: finalDate,
           time: finalTime,
@@ -262,7 +272,7 @@ export async function POST(request: NextRequest) {
     }
 
     // ── 7. Enviar respuesta al cliente via Zavu ───────────────────────────────
-    console.log('Enviando respuesta a Zavu para:', phoneFrom);
+    console.log('Enviando respuesta a Zavu para:', normalizedPhone);
     const zavuRes = await fetch('https://api.zavu.dev/v1/messages', {
       method: 'POST',
       headers: {
@@ -271,7 +281,7 @@ export async function POST(request: NextRequest) {
       },
       body: JSON.stringify({
         senderId: senderIdFromZavu,
-        to: phoneFrom,
+        to: phoneFrom, // Zavu might need the + if provided, but we keep the DB clean
         text: botResponse,
       }),
     });
@@ -279,21 +289,13 @@ export async function POST(request: NextRequest) {
     const zavuResult = await zavuRes.json();
     console.log('Resultado Zavu:', zavuRes.status, JSON.stringify(zavuResult, null, 2));
 
-    // ── 8. Guardar conversación en BD ─────────────────────────────────────────
-    await supabaseAdmin.from('conversations').insert([
-      {
-        business_id: targetBusiness.id,
-        phone_from: phoneFrom,
-        message_type: 'incoming',
-        message_text: messageText,
-      },
-      {
-        business_id: targetBusiness.id,
-        phone_from: phoneFrom,
-        message_type: 'outgoing',
-        message_text: botResponse,
-      },
-    ]);
+    // ── 8. Guardar mensaje saliente en BD ────────────────────────────────────
+    await supabaseAdmin.from('conversations').insert({
+      business_id: targetBusiness.id,
+      phone_from: normalizedPhone,
+      message_type: 'outgoing',
+      message_text: botResponse,
+    });
 
     return NextResponse.json({ success: true });
   } catch (error) {
