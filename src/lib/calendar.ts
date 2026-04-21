@@ -394,40 +394,42 @@ export function createDynamicPrompt(
   const allDataReady = hasName && hasDate && hasTime && isSlotFree;
 
   // 1. FICHA TÉCNICA (ESTADO ABSOLUTO)
-  // Normalizamos para evitar fallos de comparación
   const availableSlots = availability?.available_slots || [];
   const cleanRequestedTime = requestedSlot?.time?.trim();
   const isSlotFree = cleanRequestedTime && availableSlots.includes(cleanRequestedTime);
   const allDataReady = hasName && hasDate && hasTime && isSlotFree;
-  const availableText = availableSlots.length > 0 ? availableSlots.join(', ') : 'Sin cupos';
+  
+  // Si no hay fecha, no podemos decir "Sin cupos", debemos pedir la fecha.
+  const availableText = !hasDate ? 'Pendiente determinar fecha' : (availableSlots.length > 0 ? availableSlots.join(', ') : 'Sin cupos para este día');
   
   const statusMemo = `
-### FICHA DE AGENDAMIENTO ###
+### MEMORIA INTERNA - NO REPETIR ###
 - PACIENTE: ${collectedData?.name || 'DESCONOCIDO'}
 - FECHA: ${collectedData?.date || 'PENDIENTE'}
 - HORA: ${collectedData?.time || 'PENDIENTE'}
 - CALENDAR: ${isSlotFree ? '✅ LIBRE' : '❌ OCUPADA/PENDIENTE'}
-#############################
+###################################
 `;
 
   let flowInstruction = '';
   if (allDataReady) {
-    flowInstruction = `ORDEN: CONFIRMA AHORA. Responde: "✓ Cita agendada. Paciente: ${collectedData!.name}, Día: ${collectedData!.date}, Hora: ${collectedData!.time}, Servicio: Consulta."`;
+    flowInstruction = `ORDEN: CONFIRMA AHORA. Responde exactamente: "✓ Cita agendada. Paciente: ${collectedData!.name}, Día: ${collectedData!.date}, Hora: ${collectedData!.time}, Servicio: Consulta."`;
   } else if (hasDate && hasTime && !isSlotFree) {
     flowInstruction = `ORDEN: La hora ${collectedData?.time} está ocupada para el ${collectedData?.date}. Ofrece solo estas: ${availableText}.`;
   } else {
     flowInstruction = `ORDEN: Pide SOLO lo faltante. Sé muy breve.
-- Si falta nombre: "¿Nombre del paciente?"
-- Si falta fecha: "¿Qué día?" (Opciones: ${availableText})
-- Si falta hora: "¿Qué hora?" (Opciones: ${availableText})`;
+- Si falta nombre: "¿A nombre de quién agendamos?"
+- Si falta fecha: "¿Qué día buscas?"
+- Si falta hora: "¿Qué hora te acomoda?" (Opciones: ${availableText})`;
   }
 
   return `
+Eres el asistente de Clínica Smile. Sé muy seco y breve.
 ${statusMemo}
+
 ${flowInstruction}
 
-Eres el asistente automático de Clínica Smile. Sé muy seco y directo. No uses frases largas.
-NUNCA repitas el texto que empieza por ###.
+PROHIBICIÓN CRÍTICA: NUNCA, bajo ningún concepto, escribas el texto que está entre ###. Es solo para tu memoria. Tu respuesta al cliente debe ser limpia.
 `.trim();
 }
 
