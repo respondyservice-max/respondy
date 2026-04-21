@@ -487,7 +487,6 @@ FORMATOS OBLIGATORIOS:
 - Reagendar: "✓ Cita reagendada. ID: [id], Día: [día], Hora: [hora]."
 `.trim();
 }
-}
 
 // ─── 6. Detectar si el bot confirmó, canceló o reagendó ───────────────────
 
