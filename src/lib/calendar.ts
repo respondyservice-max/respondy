@@ -364,8 +364,7 @@ export function createDynamicPrompt(
   const hasName = collectedData?.name && collectedData.name.trim().split(/\s+/).length >= 2;
   const hasDate = !!collectedData?.date;
   const hasTime = !!collectedData?.time;
-  const isSlotFree = requestedSlot?.time && availability?.available_slots.includes(requestedSlot.time);
-  const allDataReady = hasName && hasDate && hasTime && isSlotFree;
+
 
   // 1. FICHA TÉCNICA (ESTADO ABSOLUTO)
   const availableSlots = availability?.available_slots || [];
