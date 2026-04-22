@@ -335,6 +335,26 @@ export async function POST(request: NextRequest) {
       }
     ]);
 
+    // ── 9. Limpiar historial antiguo para no saturar la base de datos ──────────────────
+    // Mantener solo los últimos 6 mensajes por número para ahorrar espacio
+    const { data: messagesToKeep } = await supabaseAdmin
+      .from('conversations')
+      .select('id')
+      .eq('business_id', targetBusiness.id)
+      .eq('phone_from', normalizedPhone)
+      .order('created_at', { ascending: false })
+      .limit(6);
+
+    if (messagesToKeep && messagesToKeep.length > 0) {
+      const keepIds = messagesToKeep.map(m => m.id);
+      await supabaseAdmin
+        .from('conversations')
+        .delete()
+        .eq('business_id', targetBusiness.id)
+        .eq('phone_from', normalizedPhone)
+        .not('id', 'in', `(${keepIds.join(',')})`);
+    }
+
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Error en webhook:', error);
