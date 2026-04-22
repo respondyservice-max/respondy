@@ -293,33 +293,6 @@ export async function updateCalendarEvent(
   }
 }
 
-// ─── 4. Parsear mensaje del cliente para extraer intención ───────────────────
-
-export function parseClientMessage(text: string): ParsedAppointment {
-  const lower = text.toLowerCase();
-
-  // Detectar servicio mencionado
-  const serviceKeywords: Record<string, string> = {
-    'blanqueamiento': 'blanqueamiento',
-    'limpieza': 'limpieza dental',
-    'profilaxis': 'limpieza dental',
-    'empaste': 'empaste',
-    'extracción': 'extracción',
-    'extraccion': 'extracción',
-    'ortodoncia': 'ortodoncia',
-    'consulta': 'consulta',
-    'radiografía': 'radiografía',
-    'radiografia': 'radiografía',
-    'tratamiento': 'tratamiento',
-  };
-
-  let service: string | null = null;
-  for (const [keyword, name] of Object.entries(serviceKeywords)) {
-    if (lower.includes(keyword)) {
-      service = name;
-      break;
-    }
-  }
 
 // ─── 5. Parsear mensaje del cliente con IA (GROQ) ─────────────────────────
 
