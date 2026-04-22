@@ -130,7 +130,7 @@ export async function checkAvailability(
   // Extraer horarios ocupados (Forzando zona horaria de Chile)
   const occupied_times: string[] = [];
   for (const event of events) {
-    const start = event.start?.dateTime || event.start?.date;
+    const start = (event.start?.dateTime || event.start?.date) as string;
     if (start) {
       const d = new Date(start);
       const timeStr = d.toLocaleTimeString('es-CL', {

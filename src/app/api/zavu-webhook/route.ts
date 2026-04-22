@@ -147,9 +147,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Datos finales consolidados (Prioridad: lo que ya está grabado en piedra)
-    const finalName = sessionAppt?.patient_name || parsed.patientName;
-    const finalDateStr = (sessionAppt?.date_time ? sessionAppt.date_time.split('T')[0] : parsed.date) || null;
-    const finalTimeStr = (sessionAppt?.date_time ? sessionAppt.date_time.split('T')[1].substring(0, 5) : parsed.time) || null;
+    const finalName: string | null = sessionAppt?.patient_name || parsed.patientName || null;
+    const finalDateStr: string | null = (sessionAppt?.date_time ? (sessionAppt.date_time as string).split('T')[0] : parsed.date) || null;
+    const finalTimeStr: string | null = (sessionAppt?.date_time ? (sessionAppt.date_time as string).split('T')[1].substring(0, 5) : parsed.time) || null;
 
     const hasCalendar = !!targetBusiness.google_calendar_access_token_encrypted;
 
