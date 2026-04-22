@@ -233,7 +233,7 @@ export async function POST(request: NextRequest) {
     // ── 6. Si el bot confirmó, canceló o reagendó ────────────────────────────
 
     // CASO A: REAGENDAR
-    const rescheduleData = extractReschedule(botResponse);
+    const rescheduleData = await extractReschedule(botResponse);
     if (hasCalendar && rescheduleData) {
       console.log('🔄 Cita reagendada por el bot...', rescheduleData);
       const apptToMove = upcomingAppointments.find((a: any) => a.id === rescheduleData.id);
@@ -272,7 +272,7 @@ export async function POST(request: NextRequest) {
       // Si el mensaje del usuario no tenía fecha o hora (ej: "sí, confirmo"),
       // intentamos extraerlos de la respuesta de confirmación del bot
       if (!finalDate || !finalTime || !patientName) {
-        const botParsed = parseClientMessage(botResponse);
+        const botParsed = await parseClientMessage(botResponse);
         finalDate = finalDate || botParsed.date;
         finalTime = finalTime || botParsed.time;
         finalService = parsed.service || botParsed.service || 'Consulta';

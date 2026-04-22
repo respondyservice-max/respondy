@@ -448,12 +448,10 @@ export function extractCancellation(botResponse: string): string | null {
   return match ? match[1] : null;
 }
 
-export function extractReschedule(botResponse: string): { id: string, date: string, time: string } | null {
+export async function extractReschedule(botResponse: string): Promise<{ id: string, date: string, time: string } | null> {
   const match = botResponse.match(/✓ cita reagendada\. id:\s*([a-f0-9\-]+), día:\s*([a-z0-9\-\s]+), hora:\s*([0-9:]+)/i);
   if (match) {
-    // Para simplificar, obtenemos date y time intentando re-parsearlo
-    // Pero asume que se usan las variables de contexto o se hace un match similar
-    const p = parseClientMessage(botResponse);
+    const p = await parseClientMessage(botResponse);
     return { id: match[1], date: p.date as string, time: match[3] };
   }
   return null;
