@@ -30,6 +30,8 @@ export interface Business {
   
   // Config
   ai_bot_enabled: boolean;
+  scheduling_mode: 'auto' | 'link';
+  booking_link?: string;
   services: string[];
   prompt_custom: string;
   

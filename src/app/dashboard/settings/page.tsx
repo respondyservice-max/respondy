@@ -16,6 +16,10 @@ export default function Settings() {
   const [zavuConnected, setZavuConnected] = useState(false);
   const [calendarConnected, setCalendarConnected] = useState(false);
   const [aiBotEnabled, setAiBotEnabled] = useState(true);
+  const [schedulingMode, setSchedulingMode] = useState<'auto' | 'link'>('auto');
+  const [bookingLink, setBookingLink] = useState('');
+  const [schedulingSaving, setSchedulingSaving] = useState(false);
+  const [schedulingMessage, setSchedulingMessage] = useState('');
   const [activeTab, setActiveTab] = useState<'negocio' | 'horarios' | 'integraciones'>('negocio');
 
   const [form, setForm] = useState({
@@ -83,7 +87,9 @@ export default function Settings() {
         if (data.zavu_api_key_encrypted) {
           setZavuConnected(true);
         }
-        setAiBotEnabled(data.ai_bot_enabled !== false); // Default a true if undefined
+        setAiBotEnabled(data.ai_bot_enabled !== false);
+        setSchedulingMode(data.scheduling_mode || 'auto');
+        setBookingLink(data.booking_link || '');
         if (data.google_calendar_id) {
           setCalendarConnected(true);
         }
@@ -194,6 +200,30 @@ export default function Settings() {
     } catch (error) {
       console.error('Error:', error);
       setAiBotEnabled(!newValue);
+    }
+  };
+
+  // Guardar modo de agendamiento
+  const handleSaveSchedulingMode = async () => {
+    setSchedulingSaving(true);
+    setSchedulingMessage('');
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { error } = await supabase
+        .from('businesses')
+        .update({ scheduling_mode: schedulingMode, booking_link: bookingLink })
+        .eq('user_id', user.id);
+      if (!error) {
+        setSchedulingMessage('✅ Modo guardado correctamente');
+        setTimeout(() => setSchedulingMessage(''), 3000);
+      } else {
+        setSchedulingMessage('❌ Error al guardar');
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSchedulingSaving(false);
     }
   };
 
@@ -629,6 +659,95 @@ export default function Settings() {
                 </div>
               )}
             </div>
+            </div>
+
+            {/* MODO DE AGENDAMIENTO */}
+            {calendarConnected && (
+              <div className="bg-white rounded-xl p-6 sm:p-8 shadow-sm border border-gray-100">
+                <h2 className="text-lg font-bold text-gray-900 mb-1">🤖 Modo de agendamiento</h2>
+                <p className="text-sm text-gray-500 mb-6">
+                  Elige cómo quieres que tu IA gestione las citas.
+                </p>
+
+                {/* Switch visual */}
+                <div className="grid grid-cols-2 gap-3 mb-6">
+                  <button
+                    type="button"
+                    onClick={() => setSchedulingMode('auto')}
+                    className={`p-4 rounded-xl border-2 text-left transition-all ${
+                      schedulingMode === 'auto'
+                        ? 'border-blue-600 bg-blue-50'
+                        : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                  >
+                    <div className="text-2xl mb-2">⚡</div>
+                    <div className="font-semibold text-gray-900 text-sm">Automático</div>
+                    <div className="text-xs text-gray-500 mt-1">
+                      La IA pregunta la fecha y hora y agenda directamente
+                    </div>
+                    {schedulingMode === 'auto' && (
+                      <div className="mt-2 text-xs font-semibold text-blue-600">● Activo</div>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setSchedulingMode('link')}
+                    className={`p-4 rounded-xl border-2 text-left transition-all ${
+                      schedulingMode === 'link'
+                        ? 'border-blue-600 bg-blue-50'
+                        : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                  >
+                    <div className="text-2xl mb-2">🔗</div>
+                    <div className="font-semibold text-gray-900 text-sm">Enlace</div>
+                    <div className="text-xs text-gray-500 mt-1">
+                      La IA comparte el link de tu página de reservas
+                    </div>
+                    {schedulingMode === 'link' && (
+                      <div className="mt-2 text-xs font-semibold text-blue-600">● Activo</div>
+                    )}
+                  </button>
+                </div>
+
+                {schedulingMode === 'link' && (
+                  <div className="mb-5">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Link de tu página de reservas de Google Calendar
+                    </label>
+                    <input
+                      type="url"
+                      value={bookingLink}
+                      onChange={(e) => setBookingLink(e.target.value)}
+                      placeholder="https://calendar.google.com/calendar/appointments/..."
+                      className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition text-sm"
+                    />
+                    <p className="text-xs text-gray-400 mt-2">
+                      Encuéntralo en Google Calendar → Páginas de reservas → copiar enlace 🔗
+                    </p>
+                  </div>
+                )}
+
+                {schedulingMessage && (
+                  <div className={`p-3 rounded-xl text-sm font-medium mb-4 ${
+                    schedulingMessage.includes('✅')
+                      ? 'bg-green-50 text-green-800 border border-green-200'
+                      : 'bg-red-50 text-red-800 border border-red-200'
+                  }`}>
+                    {schedulingMessage}
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  onClick={handleSaveSchedulingMode}
+                  disabled={schedulingSaving || (schedulingMode === 'link' && !bookingLink)}
+                  className="w-full py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl font-semibold hover:shadow-lg hover:shadow-blue-500/25 transition-all duration-300 disabled:opacity-40 text-sm"
+                >
+                  {schedulingSaving ? 'Guardando...' : 'Guardar modo'}
+                </button>
+              </div>
+            )}
           </div>
         )}
       </main>

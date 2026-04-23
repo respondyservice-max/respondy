@@ -76,6 +76,53 @@ export async function POST(request: NextRequest) {
     // Normalizar teléfono (quitar el + para búsquedas consistentes)
     const normalizedPhone = phoneFrom.replace('+', '');
 
+    // ── MODO ENLACE: compartir link de Google Calendar y terminar ────────────
+    if (targetBusiness.scheduling_mode === 'link' && targetBusiness.booking_link) {
+      console.log('Modo enlace activo, compartiendo link de reservas...');
+      const linkResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.GROQ_API_KEY || ''}`,
+        },
+        body: JSON.stringify({
+          model: 'llama-3.1-8b-instant',
+          messages: [
+            {
+              role: 'system',
+              content: `Eres el asistente de ${targetBusiness.name}. Tu única función es responder de manera amigable y breve que para agendar una cita, el paciente debe usar el siguiente enlace: ${targetBusiness.booking_link}\n\nResponde en español, de forma cordial y sin inventar información extra.`
+            },
+            { role: 'user', content: messageText }
+          ],
+          temperature: 0.5,
+        }),
+      });
+      const linkGroqData = await linkResponse.json();
+      const linkBotResponse = linkGroqData.choices?.[0]?.message?.content
+        || `Para agendar tu cita, usa este enlace: ${targetBusiness.booking_link}`;
+
+      await fetch('https://api.zavu.dev/v1/messages', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${zavuApiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ senderId: senderIdFromZavu, to: phoneFrom, text: linkBotResponse }),
+      });
+
+      // Guardar en conversación y limpiar antiguos
+      await supabaseAdmin.from('conversations').insert([
+        { business_id: targetBusiness.id, phone_from: normalizedPhone, message_type: 'incoming', message_text: messageText },
+        { business_id: targetBusiness.id, phone_from: normalizedPhone, message_type: 'outgoing', message_text: linkBotResponse },
+      ]);
+      const { data: toKeep } = await supabaseAdmin.from('conversations').select('id')
+        .eq('business_id', targetBusiness.id).eq('phone_from', normalizedPhone)
+        .order('created_at', { ascending: false }).limit(6);
+      if (toKeep && toKeep.length > 0) {
+        await supabaseAdmin.from('conversations').delete()
+          .eq('business_id', targetBusiness.id).eq('phone_from', normalizedPhone)
+          .not('id', 'in', `(${toKeep.map(m => m.id).join(',')})`);
+      }
+      return NextResponse.json({ success: true });
+    }
+
     // ── 2. Obtener historial previo (solo mensajes antiguos) ──────────────────
     // ── 2. Obtener historial previo estructurado ──────────────────
     const { data: previousMessages } = await supabaseAdmin
