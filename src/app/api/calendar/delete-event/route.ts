@@ -15,12 +15,33 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No autenticado' }, { status: 401 });
     }
 
-    const { appointment_id } = await request.json();
-    if (!appointment_id) {
-      return NextResponse.json({ error: 'appointment_id requerido' }, { status: 400 });
+    const { appointment_id, google_event_id: directEventId } = await request.json();
+
+    // ── CASO A: Se pasa google_event_id directamente (evento de Página de Reservas) ──
+    if (directEventId && !appointment_id) {
+      const { data: biz } = await supabaseAdmin
+        .from('businesses')
+        .select('*')
+        .eq('user_id', user.id)
+        .single();
+      if (!biz) return NextResponse.json({ error: 'Negocio no encontrado' }, { status: 404 });
+
+      const auth = await getGoogleCalendarClient(biz);
+      const calendar = google.calendar({ version: 'v3', auth });
+      await calendar.events.delete({
+        calendarId: biz.google_calendar_id || 'primary',
+        eventId: directEventId,
+      });
+      // Limpiar de Supabase si existía
+      await supabaseAdmin.from('appointments').delete().eq('google_event_id', directEventId);
+      return NextResponse.json({ success: true });
     }
 
-    // 1. Obtener la cita y el negocio
+    if (!appointment_id) {
+      return NextResponse.json({ error: 'appointment_id o google_event_id requerido' }, { status: 400 });
+    }
+
+    // ── CASO B: Se pasa appointment_id (flujo original) ──
     const { data: appointment, error: errAppt } = await supabaseAdmin
       .from('appointments')
       .select('*, businesses(*)')
@@ -31,7 +52,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Cita no encontrada o no autorizada' }, { status: 404 });
     }
 
-    // 2. Eliminar del calendario de Google (si fue creada ahí)
     const business = appointment.businesses;
     if (business.google_calendar_access_token_encrypted && appointment.google_event_id) {
       try {
@@ -41,14 +61,11 @@ export async function POST(request: NextRequest) {
           calendarId: business.google_calendar_id || 'primary',
           eventId: appointment.google_event_id,
         });
-        console.log(`✅ Evento ${appointment.google_event_id} borrado de Google Calendar.`);
       } catch (calErr) {
         console.error('Error borrando en Google Calendar:', calErr);
-        // Continuamos borrando localmente aunque falle en Google (pudo haber sido borrada a mano)
       }
     }
 
-    // 3. Eliminar de base de datos
     await supabaseAdmin.from('appointments').delete().eq('id', appointment_id);
 
     return NextResponse.json({ success: true, message: 'Cita cancelada con éxito' });

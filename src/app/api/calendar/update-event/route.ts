@@ -14,12 +14,48 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No autenticado' }, { status: 401 });
     }
 
-    const { appointment_id, date, time, duration } = await request.json();
-    if (!appointment_id || !date || !time) {
-      return NextResponse.json({ error: 'Faltan parámetros: appointment_id, date, y time son requeridos' }, { status: 400 });
+    const { appointment_id, google_event_id: directEventId, date, time, duration } = await request.json();
+    if (!date || !time) {
+      return NextResponse.json({ error: 'Faltan parámetros: date y time son requeridos' }, { status: 400 });
     }
 
-    // 1. Obtener cita y negocio
+    const dur = duration || 45;
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const endD = new Date(`${date}T${time}:00`);
+    endD.setMinutes(endD.getMinutes() + dur);
+    const endTimeString = `${pad(endD.getHours())}:${pad(endD.getMinutes())}`;
+
+    // ── CASO A: google_event_id directo (evento de Página de Reservas) ──
+    if (directEventId && !appointment_id) {
+      const { data: biz } = await supabaseAdmin
+        .from('businesses')
+        .select('*')
+        .eq('user_id', user.id)
+        .single();
+      if (!biz) return NextResponse.json({ error: 'Negocio no encontrado' }, { status: 404 });
+
+      const auth = await getGoogleCalendarClient(biz);
+      const calendar = google.calendar({ version: 'v3', auth });
+      await calendar.events.patch({
+        calendarId: biz.google_calendar_id || 'primary',
+        eventId: directEventId,
+        requestBody: {
+          start: { dateTime: `${date}T${time}:00`, timeZone: 'America/Santiago' },
+          end: { dateTime: `${date}T${endTimeString}:00`, timeZone: 'America/Santiago' },
+        },
+      });
+      // Actualizar también en Supabase si existía
+      await supabaseAdmin.from('appointments')
+        .update({ date_time: new Date(`${date}T${time}:00`).toISOString() })
+        .eq('google_event_id', directEventId);
+      return NextResponse.json({ success: true });
+    }
+
+    if (!appointment_id) {
+      return NextResponse.json({ error: 'appointment_id o google_event_id requerido' }, { status: 400 });
+    }
+
+    // ── CASO B: appointment_id (flujo original) ──
     const { data: appointment, error: errAppt } = await supabaseAdmin
       .from('appointments')
       .select('*, businesses(*)')
@@ -31,44 +67,26 @@ export async function POST(request: NextRequest) {
     }
 
     const business = appointment.businesses;
-    const dur = duration || 45;
-    const startDateTime = new Date(`${date}T${time}:00`);
-    const dateObj = new Date(startDateTime.getTime());
-    dateObj.setMinutes(dateObj.getMinutes() + dur);
-    const getHHMM = (d: Date) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-    const endTimeString = getHHMM(dateObj);
-
-    // 2. Modificar en Google Calendar (si fue creada ahí)
     if (business.google_calendar_access_token_encrypted && appointment.google_event_id) {
       try {
         const auth = await getGoogleCalendarClient(business);
         const calendar = google.calendar({ version: 'v3', auth });
-        
         await calendar.events.patch({
           calendarId: business.google_calendar_id || 'primary',
           eventId: appointment.google_event_id,
           requestBody: {
-            start: {
-              dateTime: `${date}T${time}:00`,
-              timeZone: 'America/Santiago',
-            },
-            end: {
-              dateTime: `${date}T${endTimeString}:00`,
-              timeZone: 'America/Santiago',
-            },
+            start: { dateTime: `${date}T${time}:00`, timeZone: 'America/Santiago' },
+            end: { dateTime: `${date}T${endTimeString}:00`, timeZone: 'America/Santiago' },
           },
         });
-        console.log(`✅ Evento ${appointment.google_event_id} reprogramado en Google Calendar.`);
       } catch (calErr) {
         console.error('Error reprogramando en Google Calendar:', calErr);
-        // Si no se encuentra en Google, continuar con la actualización local
       }
     }
 
-    // 3. Modificar base de datos
     await supabaseAdmin
       .from('appointments')
-      .update({ date_time: startDateTime.toISOString() })
+      .update({ date_time: new Date(`${date}T${time}:00`).toISOString() })
       .eq('id', appointment_id);
 
     return NextResponse.json({ success: true, message: 'Cita reprogramada con éxito' });
