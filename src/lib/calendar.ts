@@ -131,6 +131,10 @@ export async function checkAvailability(
     const start = (event.start?.dateTime || event.start?.date) as string;
     if (start) {
       const d = new Date(start);
+      // Validar que el evento sea del día solicitado en hora Chile
+      const eventDateChile = d.toLocaleDateString('en-CA', { timeZone: 'America/Santiago' }); // en-CA gives YYYY-MM-DD
+      if (eventDateChile !== date) continue;
+
       const timeStr = d.toLocaleTimeString('es-CL', {
         hour: '2-digit',
         minute: '2-digit',
@@ -300,6 +304,10 @@ export async function parseClientMessage(history: string): Promise<{
 
   try {
     const today = new Date();
+    const todayStr = today.toLocaleDateString('es-CL', { 
+      weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+      timeZone: 'America/Santiago' 
+    });
     const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -311,7 +319,7 @@ export async function parseClientMessage(history: string): Promise<{
         messages: [
           {
             role: 'system',
-            content: `Eres un extractor técnico de datos. Hoy es ${today.toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}.
+            content: `Eres un extractor técnico de datos. Hoy es ${todayStr}.
             
             Tu única misión es extraer los datos del paciente analizando TODO el historial. 
             Reglas críticas:
@@ -352,7 +360,8 @@ export function createDynamicPrompt(
   collectedData?: { name?: string | null; date?: string | null; time?: string | null; service?: string | null }
 ): string {
   const currentDate = new Date().toLocaleDateString('es-CL', {
-    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+    timeZone: 'America/Santiago'
   });
 
   const hasName = collectedData?.name && collectedData.name.trim().split(/\s+/).length >= 2;
