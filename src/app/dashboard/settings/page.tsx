@@ -1,11 +1,10 @@
-// app/dashboard/settings/page.tsx - SETTINGS MEJORADO (SEGURO)
+// app/dashboard/settings/page.tsx - SETTINGS SIMPLIFICADO FINAL
 'use client';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import DashboardNav from '@/components/DashboardNav';
 import { useRouter } from 'next/navigation';
-import { CheckCircle, Loader, ExternalLink } from 'lucide-react';
-import LocationPicker from '@/components/LocationPicker';
+import { CheckCircle, Loader, ExternalLink, HelpCircle, Info } from 'lucide-react';
 import type { Business } from '@/types';
 
 export default function Settings() {
@@ -15,17 +14,13 @@ export default function Settings() {
   const [saving, setSaving] = useState(false);
   const [zavuConnected, setZavuConnected] = useState(false);
   const [calendarConnected, setCalendarConnected] = useState(false);
-  const [aiBotEnabled, setAiBotEnabled] = useState(true);
-  const [schedulingMode, setSchedulingMode] = useState<'auto' | 'link'>('auto');
+  const [schedulingMode, setSchedulingMode] = useState<'auto' | 'link'>('link');
   const [bookingLink, setBookingLink] = useState('');
-  const [appointmentDuration, setAppointmentDuration] = useState(45);
-  const [minLeadTime, setMinLeadTime] = useState(2);
-  const [serviceName, setServiceName] = useState('Consulta');
-  const [serviceDescription, setServiceDescription] = useState('');
   const [activeTab, setActiveTab] = useState<'agente' | 'integraciones'>('agente');
   const [agentName, setAgentName] = useState('Sofía');
   const [agentPersonality, setAgentPersonality] = useState('amable');
-  const [promptMode, setPromptMode] = useState<'conversacional' | 'agendador'>('agendador');
+  const [promptMode, setPromptMode] = useState<'agendador' | 'conversacional'>('agendador');
+  const [showHelpModal, setShowHelpModal] = useState(false);
 
   const [form, setForm] = useState({
     name: '',
@@ -35,33 +30,12 @@ export default function Settings() {
     prompt_custom: '',
   });
 
-  const [weeklySchedule, setWeeklySchedule] = useState<any>({
-    lunes: { active: true, open: "09:00", close: "18:00" },
-    martes: { active: true, open: "09:00", close: "18:00" },
-    miercoles: { active: true, open: "09:00", close: "18:00" },
-    jueves: { active: true, open: "09:00", close: "18:00" },
-    viernes: { active: true, open: "09:00", close: "18:00" },
-    sabado: { active: true, open: "09:00", close: "14:00" },
-    domingo: { active: false, open: "09:00", close: "18:00" }
-  });
-
-  const [zavuForm, setZavuForm] = useState({
-    zavu_api_key: '',
-    zavu_sender_id: '',
-  });
-
-  const [zavuLoading, setZavuLoading] = useState(false);
-  const [saveMessage, setSaveMessage] = useState('');
-
-  // Cargar datos del negocio
+  // Cargar datos
   useEffect(() => {
     const fetchBusiness = async () => {
       try {
         const { data: { user } } = await supabase.auth.getUser();
-        if (!user) {
-          router.push('/auth/login');
-          return;
-        }
+        if (!user) { router.push('/auth/login'); return; }
 
         const { data, error } = await supabase
           .from('businesses')
@@ -69,10 +43,7 @@ export default function Settings() {
           .eq('user_id', user.id)
           .single();
 
-        if (error || !data) {
-          router.push('/dashboard');
-          return;
-        }
+        if (error || !data) { router.push('/dashboard'); return; }
 
         setBusiness(data);
         setForm({
@@ -83,277 +54,191 @@ export default function Settings() {
           prompt_custom: data.prompt_custom || '',
         });
         
-        if (data.weekly_schedule) {
-          setWeeklySchedule(data.weekly_schedule);
-        }
-
-        if (data.zavu_api_key_encrypted) {
-          setZavuConnected(true);
-        }
-        setAiBotEnabled(data.ai_bot_enabled !== false);
-        setSchedulingMode(data.scheduling_mode || 'auto');
+        setZavuConnected(!!data.zavu_api_key_encrypted);
+        setSchedulingMode(data.scheduling_mode || 'link');
         setBookingLink(data.booking_link || '');
-        
+        setCalendarConnected(!!data.google_calendar_id);
+
         const config = data.weekly_schedule?._config || {};
-        setAppointmentDuration(config.appointment_duration || data.appointment_duration || 45);
-        setMinLeadTime(config.min_lead_time_hours || data.min_lead_time_hours || 2);
-        setServiceName(config.service_name || data.service_name || 'Consulta');
-        setServiceDescription(config.service_description || data.service_description || '');
-        
         setAgentName(config.agent_name || 'Sofía');
         setAgentPersonality(config.agent_personality || 'amable');
         setPromptMode(config.prompt_mode || 'agendador');
 
-        if (data.google_calendar_id) {
-          setCalendarConnected(true);
-        }
-      } catch (error) {
-        console.error('Error:', error);
-      } finally {
-        setLoading(false);
-      }
+      } catch (error) { console.error(error); }
+      finally { setLoading(false); }
     };
-
     fetchBusiness();
   }, [router]);
 
-  // Generador de Prompt Dinámico
   const handleGeneratePrompt = () => {
-    let personalityPrompt = "";
-    switch(agentPersonality) {
-      case 'formal': personalityPrompt = "Usa un lenguaje formal, educado y profesional. Evita modismos."; break;
-      case 'divertido': personalityPrompt = "Sé divertido, cercano y usa muchos emojis relevantes. Mantén la energía alta. 😃✨🚀"; break;
-      default: personalityPrompt = "Sé amable, cordial y servicial. Usa un tono equilibrado.";
-    }
+    let personalityPrompt = agentPersonality === 'formal' ? "Usa un lenguaje formal y profesional." : 
+                           agentPersonality === 'divertido' ? "Sé divertido y usa muchos emojis 😃✨." : 
+                           "Sé amable y servicial.";
 
-    const servicesList = form.services ? `Los servicios que ofrecemos son: ${form.services}.` : "";
+    const servicesStr = form.services ? ` Ofrecemos: ${form.services}.` : "";
+    const base = promptMode === 'conversacional' 
+      ? `Eres ${agentName} de ${form.name}. ${personalityPrompt}${servicesStr} Charla amigablemente y luego invita a agendar.`
+      : `Eres ${agentName} de ${form.name}. ${personalityPrompt}${servicesStr} Tu meta es agendar rápido pidiendo nombre y fecha.`;
     
-    let basePrompt = "";
-    if (promptMode === 'conversacional') {
-      basePrompt = `Eres ${agentName}, el asistente virtual de ${form.name}. ${personalityPrompt} ${servicesList} 
-Tu objetivo es primero saludar, responder dudas sobre nuestros servicios y ubicación, y solo después de un par de interacciones amigables, invitar al usuario a agendar una cita.`;
-    } else {
-      basePrompt = `Eres ${agentName}, el asistente virtual de ${form.name}. ${personalityPrompt} ${servicesList} 
-Tu objetivo principal es agendar citas de forma eficiente. Siempre mantén el foco en obtener el nombre, fecha y hora del paciente.`;
-    }
-
-    setForm({ ...form, prompt_custom: basePrompt.trim() });
+    setForm({ ...form, prompt_custom: base });
   };
 
   const handleSaveAll = async () => {
     setSaving(true);
-    setSaveMessage('');
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const updatedSchedule = {
-        ...weeklySchedule,
-        _config: {
-          ...weeklySchedule?._config,
-          appointment_duration: appointmentDuration,
-          min_lead_time_hours: minLeadTime,
-          service_name: serviceName,
-          service_description: serviceDescription,
+      const updatedSchedule = { 
+        ...(business?.weekly_schedule || {}), 
+        _config: { 
+          ...(business?.weekly_schedule?._config || {}),
           agent_name: agentName,
           agent_personality: agentPersonality,
           prompt_mode: promptMode
-        }
+        } 
       };
 
-      const { error } = await supabase
-        .from('businesses')
-        .update({ 
-          name: form.name,
-          business_type: form.business_type,
-          location: form.location,
-          services: form.services.split(',').map(s => s.trim()).filter(Boolean),
-          prompt_custom: form.prompt_custom,
-          scheduling_mode: schedulingMode, 
-          booking_link: bookingLink,
-          weekly_schedule: updatedSchedule
-        })
-        .eq('user_id', user.id);
-
-      if (!error) {
-        setSaveMessage('✅ Configuración guardada');
-        setTimeout(() => setSaveMessage(''), 3000);
-      } else {
-        setSaveMessage('❌ Error al guardar');
-      }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setSaving(false);
-    }
+      await supabase.from('businesses').update({ 
+        name: form.name,
+        services: form.services.split(',').map(s => s.trim()).filter(Boolean),
+        prompt_custom: form.prompt_custom,
+        scheduling_mode: schedulingMode,
+        booking_link: bookingLink,
+        weekly_schedule: updatedSchedule
+      }).eq('user_id', user?.id);
+      
+      alert('✅ Configuración guardada correctamente');
+    } catch (e) { console.error(e); }
+    finally { setSaving(false); }
   };
 
-  const handleZavuSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setZavuLoading(true);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const response = await fetch('/api/business/credentials', {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session?.access_token || ''}`
-        },
-        body: JSON.stringify({
-          zavu_api_key: zavuForm.zavu_api_key,
-          zavu_sender_id: zavuForm.zavu_sender_id,
-        }),
-      });
-      if (response.ok) {
-        setZavuConnected(true);
-        setSaveMessage('✅ WhatsApp conectado');
-      }
-    } catch (error) {
-      console.error(error);
-    } finally {
-      setZavuLoading(false);
-    }
-  };
-
-  const handleDisconnectZavu = async () => {
-    if (!confirm('¿Desconectar WhatsApp?')) return;
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      await fetch('/api/business/disconnect-zavu', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${session?.access_token || ''}` }
-      });
-      setZavuConnected(false);
-    } catch (error) { console.error(error); }
-  };
-
-  const handleConnectCalendar = async () => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const response = await fetch('/api/calendar/authorize', {
-        headers: { 'Authorization': `Bearer ${session?.access_token || ''}` }
-      });
-      const data = await response.json();
-      if (data.authUrl) window.location.href = data.authUrl;
-    } catch (error) { console.error(error); }
-  };
-
-  const handleDisconnectCalendar = async () => {
-    if (!confirm('¿Desconectar Calendar?')) return;
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      await fetch('/api/calendar/disconnect', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${session?.access_token || ''}` }
-      });
-      setCalendarConnected(false);
-    } catch (error) { console.error(error); }
-  };
-
-  if (loading) return <div className="min-h-screen bg-gray-50 flex items-center justify-center"><Loader className="w-8 h-8 animate-spin text-blue-600" /></div>;
-  if (!business) return null;
+  if (loading) return <div className="min-h-screen flex items-center justify-center"><Loader className="animate-spin text-blue-600" /></div>;
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <DashboardNav business={business} />
+      <DashboardNav business={business!} />
       <main className="max-w-4xl mx-auto px-4 py-8">
         <h1 className="text-3xl font-bold mb-8 text-gray-900">Configuración</h1>
-        
+
         <div className="flex gap-1 mb-8 bg-gray-100 p-1 rounded-xl max-w-sm">
-          <button onClick={() => setActiveTab('agente')} className={`flex-1 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all ${activeTab === 'agente' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}>Agente IA y Agendamiento</button>
-          <button onClick={() => setActiveTab('integraciones')} className={`flex-1 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all ${activeTab === 'integraciones' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}>Integraciones</button>
+          <button onClick={() => setActiveTab('agente')} className={`flex-1 px-4 py-2 rounded-lg text-sm font-semibold transition-all ${activeTab === 'agente' ? 'bg-white shadow-sm' : 'text-gray-500'}`}>Agente IA</button>
+          <button onClick={() => setActiveTab('integraciones')} className={`flex-1 px-4 py-2 rounded-lg text-sm font-semibold transition-all ${activeTab === 'integraciones' ? 'bg-white shadow-sm' : 'text-gray-500'}`}>Integraciones</button>
         </div>
 
         {activeTab === 'agente' && (
           <div className="space-y-6">
-            <div className="bg-white rounded-xl p-6 sm:p-8 shadow-sm border border-gray-100">
-              <h2 className="text-lg font-bold text-gray-900 mb-6">🤖 Perfil del Agente IA</h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Nombre de la IA</label>
-                  <input type="text" value={agentName} onChange={(e) => setAgentName(e.target.value)} className="w-full px-4 py-3 border border-gray-200 rounded-xl" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Personalidad</label>
-                  <select value={agentPersonality} onChange={(e) => setAgentPersonality(e.target.value)} className="w-full px-4 py-3 border border-gray-200 rounded-xl bg-gray-50">
-                    <option value="amable">Amable</option>
-                    <option value="formal">Formal</option>
-                    <option value="divertido">Divertido 😃</option>
-                  </select>
-                </div>
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Servicios ofrecidos (separados por coma)</label>
-                  <textarea value={form.services} onChange={(e) => setForm({ ...form, services: e.target.value })} rows={2} className="w-full px-4 py-3 border border-gray-200 rounded-xl" />
-                </div>
+            {/* Perfil */}
+            <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+              <h2 className="text-lg font-bold mb-6">🤖 Perfil del Agente IA</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <input type="text" value={agentName} onChange={(e) => setAgentName(e.target.value)} placeholder="Nombre del Agente" className="px-4 py-3 border rounded-xl" />
+                <select value={agentPersonality} onChange={(e) => setAgentPersonality(e.target.value)} className="px-4 py-3 border rounded-xl bg-gray-50">
+                  <option value="amable">Amable</option>
+                  <option value="formal">Formal</option>
+                  <option value="divertido">Divertido 😃</option>
+                </select>
+                <textarea value={form.services} onChange={(e) => setForm({...form, services: e.target.value})} placeholder="Servicios (ej: Corte, Color)" className="md:col-span-2 px-4 py-3 border rounded-xl" rows={2} />
               </div>
             </div>
 
-            <div className="bg-white rounded-xl p-6 sm:p-8 shadow-sm border border-gray-100">
-              <div className="flex justify-between items-center mb-5">
-                <h2 className="text-lg font-bold text-gray-900">📅 Modo de Agendamiento</h2>
-                {bookingLink && <a href={bookingLink.replace('/appointments/', '/r/')} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-sm font-semibold text-blue-600 hover:text-blue-700 bg-blue-50 px-4 py-2 rounded-lg transition-all"><ExternalLink className="w-4 h-4" /> Editar Disponibilidad en Google</a>}
-              </div>
+            {/* Agendamiento */}
+            <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+              <h2 className="text-lg font-bold mb-4">📅 Modo de Agendamiento</h2>
               <div className="grid grid-cols-2 gap-3 mb-6">
-                <button type="button" onClick={() => setSchedulingMode('link')} className={`p-4 rounded-xl border-2 text-left transition-all ${schedulingMode === 'link' ? 'border-blue-600 bg-blue-50' : 'border-gray-200'}`}>
-                  <div className="text-2xl mb-2">🔗</div>
-                  <div className="font-semibold text-gray-900 text-sm">Por Enlace</div>
+                <button onClick={() => setSchedulingMode('link')} className={`p-4 rounded-xl border-2 text-left ${schedulingMode === 'link' ? 'border-blue-600 bg-blue-50' : 'border-gray-100'}`}>
+                  <div className="text-xl mb-1">🔗</div>
+                  <div className="font-bold text-sm">Por Enlace</div>
+                  <div className="text-xs text-gray-500">Comparte tu link</div>
                 </button>
-                <button type="button" onClick={() => setSchedulingMode('auto')} className={`p-4 rounded-xl border-2 text-left transition-all ${schedulingMode === 'auto' ? 'border-blue-600 bg-blue-50' : 'border-gray-200'}`}>
-                  <div className="text-2xl mb-2">⚡</div>
-                  <div className="font-semibold text-gray-900 text-sm">Automático</div>
+                <button onClick={() => setSchedulingMode('auto')} className={`p-4 rounded-xl border-2 text-left ${schedulingMode === 'auto' ? 'border-blue-600 bg-blue-50' : 'border-gray-100'}`}>
+                  <div className="text-xl mb-1">⚡</div>
+                  <div className="font-bold text-sm">Automático</div>
+                  <div className="text-xs text-gray-500">IA agenda directo</div>
                 </button>
               </div>
-              {schedulingMode === 'auto' && (
-                <div className="bg-amber-50 border border-amber-200 p-4 rounded-xl mb-4 text-xs text-amber-800">
-                  <strong>Disclaimer:</strong> La IA tiene un 95% de precisión. Recomendamos revisar periódicamente tu calendario.
+
+              <div className="space-y-4">
+                <div className="p-4 bg-blue-50 rounded-xl border border-blue-100">
+                  <p className="text-sm text-blue-800 font-medium flex items-center gap-2 mb-2">
+                    <Info className="w-4 h-4" /> Configura tu disponibilidad en Google
+                  </p>
+                  <p className="text-xs text-blue-700 mb-3">
+                    Crea tu "Página de citas" en Google Calendar y pega el enlace aquí abajo.
+                  </p>
+                  <button 
+                    onClick={() => setShowHelpModal(true)}
+                    className="text-xs font-bold text-blue-600 underline flex items-center gap-1"
+                  >
+                    ¿Cómo obtener mi link? <HelpCircle className="w-3 h-3" />
+                  </button>
                 </div>
-              )}
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">Link de Reserva (Google)</label>
-                <input type="url" value={bookingLink} onChange={(e) => setBookingLink(e.target.value)} className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm" />
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 mb-1">TU LINK DE RESERVA DE GOOGLE</label>
+                  <input 
+                    type="url" 
+                    value={bookingLink} 
+                    onChange={(e) => setBookingLink(e.target.value)}
+                    placeholder="https://calendar.google.com/calendar/appointments/..."
+                    className="w-full px-4 py-3 border rounded-xl text-sm"
+                  />
+                </div>
               </div>
             </div>
 
-            <div className="bg-white rounded-xl p-6 sm:p-8 shadow-sm border border-gray-100">
-              <div className="flex justify-between items-center mb-5">
-                <h2 className="text-lg font-bold text-gray-900">📝 Instrucciones del Agente</h2>
-                <div className="flex gap-2 bg-gray-100 p-1 rounded-lg">
-                  <button onClick={() => setPromptMode('conversacional')} className={`px-3 py-1.5 rounded-md text-xs font-semibold ${promptMode === 'conversacional' ? 'bg-white shadow-sm' : 'text-gray-500'}`}>Conversacional</button>
-                  <button onClick={() => setPromptMode('agendador')} className={`px-3 py-1.5 rounded-md text-xs font-semibold ${promptMode === 'agendador' ? 'bg-white shadow-sm' : 'text-gray-500'}`}>Agendador</button>
+            {/* Prompt */}
+            <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-lg font-bold">📝 Instrucciones</h2>
+                <div className="flex gap-1 bg-gray-100 p-1 rounded-lg">
+                  <button onClick={() => setPromptMode('conversacional')} className={`px-3 py-1 rounded-md text-xs font-bold ${promptMode === 'conversacional' ? 'bg-white shadow-sm' : 'text-gray-500'}`}>Conversacional</button>
+                  <button onClick={() => setPromptMode('agendador')} className={`px-3 py-1 rounded-md text-xs font-bold ${promptMode === 'agendador' ? 'bg-white shadow-sm' : 'text-gray-500'}`}>Agendador</button>
                 </div>
               </div>
-              <button onClick={handleGeneratePrompt} className="w-full py-2.5 bg-gray-900 text-white rounded-xl text-sm font-bold mb-4 hover:bg-black transition shadow-md">✨ Generar Instrucciones Automáticamente</button>
-              <textarea value={form.prompt_custom} onChange={(e) => setForm({ ...form, prompt_custom: e.target.value })} rows={6} className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm font-mono bg-gray-50" />
+              <button onClick={handleGeneratePrompt} className="w-full py-2 bg-gray-900 text-white rounded-xl text-sm font-bold mb-4">✨ Generar Instrucciones Automáticamente</button>
+              <textarea value={form.prompt_custom} onChange={(e) => setForm({...form, prompt_custom: e.target.value})} rows={5} className="w-full px-4 py-3 border rounded-xl text-sm font-mono bg-gray-50" />
             </div>
 
-            <div className="pt-4">
-              {saveMessage && <div className={`p-4 rounded-xl text-sm font-medium mb-4 ${saveMessage.includes('✅') ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'}`}>{saveMessage}</div>}
-              <button onClick={handleSaveAll} disabled={saving} className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl font-bold text-lg disabled:opacity-50 hover:shadow-lg transition-all duration-300">{saving ? 'Guardando...' : 'Guardar Configuración'}</button>
-            </div>
+            <button onClick={handleSaveAll} disabled={saving} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold text-lg shadow-lg">
+              {saving ? 'Guardando...' : 'Guardar Configuración'}
+            </button>
           </div>
         )}
 
         {activeTab === 'integraciones' && (
           <div className="space-y-6">
-            <div className="bg-white rounded-xl p-6 sm:p-8 shadow-sm border border-gray-100">
-              <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">📱 WhatsApp (Zavu)</h2>
-              {zavuConnected ? <button onClick={handleDisconnectZavu} className="text-red-600 font-medium hover:underline transition">Desconectar WhatsApp</button> : (
-                <form onSubmit={handleZavuSubmit} className="space-y-4">
-                  <input type="password" value={zavuForm.zavu_api_key} onChange={(e) => setZavuForm({...zavuForm, zavu_api_key: e.target.value})} placeholder="API Key" className="w-full px-4 py-3 border border-gray-200 rounded-xl" />
-                  <input type="text" value={zavuForm.zavu_sender_id} onChange={(e) => setZavuForm({...zavuForm, zavu_sender_id: e.target.value})} placeholder="Sender ID" className="w-full px-4 py-3 border border-gray-200 rounded-xl" />
-                  <button type="submit" disabled={zavuLoading} className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition">Conectar WhatsApp</button>
-                </form>
-              )}
+            <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+              <h2 className="text-lg font-bold mb-4">📱 WhatsApp (Zavu)</h2>
+              {zavuConnected ? <p className="text-green-600 font-bold">✓ Conectado</p> : <p className="text-gray-400">No conectado</p>}
             </div>
-            <div className="bg-white rounded-xl p-6 sm:p-8 shadow-sm border border-gray-100">
-              <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">📅 Google Calendar</h2>
-              {calendarConnected ? <button onClick={handleDisconnectCalendar} className="text-red-600 font-medium hover:underline transition">Desconectar Calendar</button> : (
-                <button onClick={handleConnectCalendar} className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition">Conectar Google Calendar</button>
-              )}
+            <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+              <h2 className="text-lg font-bold mb-4">📅 Google Calendar</h2>
+              {calendarConnected ? <p className="text-green-600 font-bold">✓ Conectado</p> : <p className="text-gray-400">No conectado</p>}
             </div>
           </div>
         )}
       </main>
+
+      {/* MODAL DE AYUDA */}
+      {showHelpModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-8 shadow-2xl relative">
+            <button onClick={() => setShowHelpModal(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 text-2xl font-bold">&times;</button>
+            <h3 className="text-xl font-bold mb-4 text-gray-900">Configura tu Agendamiento</h3>
+            <ol className="space-y-4 text-sm text-gray-600 mb-6">
+              <li>1. Ve a <a href="https://calendar.google.com/" target="_blank" className="text-blue-600 font-bold underline">Google Calendar</a>.</li>
+              <li>2. Busca el botón <strong>"+"</strong> al lado de <strong>"Páginas de reserva"</strong>:</li>
+              <div className="bg-gray-50 p-4 rounded-xl flex justify-center border border-gray-100">
+                <img src="/images/google-help.png" alt="Instrucción Google" className="max-h-12" />
+                {/* Fallback si no hay imagen: */}
+                <div className="flex items-center gap-2 text-gray-800 font-medium">Páginas de reserva <span className="text-xl">+</span></div>
+              </div>
+              <li>3. Configura tus horarios y guarda.</li>
+              <li>4. Haz clic en <strong>"Compartir"</strong>, copia el enlace y pégalo en Respondy.</li>
+            </ol>
+            <button onClick={() => setShowHelpModal(false)} className="w-full py-3 bg-gray-900 text-white rounded-xl font-bold">Entendido</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
