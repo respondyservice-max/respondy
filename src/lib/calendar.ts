@@ -112,22 +112,20 @@ export async function checkAvailability(
     };
   }
 
-  // Rango del día completo
-  const timeMin = new Date(`${date}T${dayStart}:00`);
-  const timeMax = new Date(`${date}T${dayEnd}:00`);
-
-  // Obtener eventos del día
+  // Consultar el día completo en UTC para no perder eventos por offset de zona horaria
+  const nextDate = new Date(`${date}T00:00:00Z`);
+  nextDate.setUTCDate(nextDate.getUTCDate() + 1);
   const { data } = await calendar.events.list({
     calendarId: business.google_calendar_id || 'primary',
-    timeMin: timeMin.toISOString(),
-    timeMax: timeMax.toISOString(),
+    timeMin: `${date}T00:00:00Z`,
+    timeMax: nextDate.toISOString(),
     singleEvents: true,
     orderBy: 'startTime',
   });
 
   const events = data.items || [];
 
-  // Extraer horarios ocupados (Forzando zona horaria de Chile)
+  // Extraer horarios ocupados en hora Chile
   const occupied_times: string[] = [];
   for (const event of events) {
     const start = (event.start?.dateTime || event.start?.date) as string;
@@ -143,24 +141,20 @@ export async function checkAvailability(
     }
   }
 
-  // Generar slots disponibles (cada 30 min)
+  // Generar slots con aritmética pura (dayStart/dayEnd ya están en hora Chile)
+  // Evita el bug UTC donde new Date(`...T09:00:00`) = 06:00 Chile en Vercel
   const available_slots: string[] = [];
-  // Usamos una base UTC para el cálculo y extraemos la hora local de Chile para la etiqueta
-  let current = new Date(`${date}T${dayStart}:00`);
-  const end = new Date(`${date}T${dayEnd}:00`);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const [startH, startM] = dayStart.split(':').map(Number);
+  const [endH, endM] = dayEnd.split(':').map(Number);
+  const startMins = startH * 60 + startM;
+  const endMins = endH * 60 + endM;
 
-  while (current <= new Date(end.getTime() - durationMinutes * 60 * 1000)) {
-    const slot = current.toLocaleTimeString('es-CL', {
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-      timeZone: 'America/Santiago'
-    });
-    
+  for (let mins = startMins; mins <= endMins - durationMinutes; mins += 30) {
+    const slot = `${pad(Math.floor(mins / 60))}:${pad(mins % 60)}`;
     if (!occupied_times.includes(slot)) {
       available_slots.push(slot);
     }
-    current = new Date(current.getTime() + 30 * 60 * 1000);
   }
 
   // Etiqueta humana de la fecha
