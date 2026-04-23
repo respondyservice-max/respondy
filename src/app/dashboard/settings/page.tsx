@@ -659,7 +659,6 @@ export default function Settings() {
                 </div>
               )}
             </div>
-            </div>
 
             {/* MODO DE AGENDAMIENTO */}
             {calendarConnected && (
