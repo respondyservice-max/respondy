@@ -180,7 +180,6 @@ export async function checkAvailability(
     available_slots.push(slot);
   }
 
-  // Etiqueta humana de la fecha
   const dateObj = new Date(`${date}T12:00:00`);
   const date_label = dateObj.toLocaleDateString('es-CL', {
     weekday: 'long',
@@ -191,7 +190,7 @@ export async function checkAvailability(
 
   return {
     requested_slot: null,
-    is_available: false,
+    is_available: available_slots.length > 0,
     occupied_times,
     available_slots,
     suggested_alternatives: available_slots.slice(0, 3),
@@ -384,7 +383,7 @@ export function createDynamicPrompt(
     timeZone: 'America/Santiago'
   });
 
-  const hasName = collectedData?.name && collectedData.name.trim().split(/\s+/).length >= 2;
+  const hasName = !!collectedData?.name && collectedData.name.trim().length > 0;
   const hasDate = !!collectedData?.date;
   const hasTime = !!collectedData?.time;
 
@@ -413,23 +412,28 @@ export function createDynamicPrompt(
   } else if (hasDate && hasTime && !isSlotFree) {
     flowInstruction = `ORDEN: La hora ${collectedData?.time} está ocupada para el ${collectedData?.date}. Ofrece solo estas: ${availableText}.`;
   } else if (!hasName) {
-    flowInstruction = `ORDEN: Pregunta el nombre completo del paciente. Sé muy breve (ej: "¿A nombre de quién agendamos?")`;
+    flowInstruction = `ORDEN: Pregunta el nombre del paciente. Sé breve.`;
   } else if (!hasDate) {
-    flowInstruction = `ORDEN: Pregunta qué día busca agendar. Sé muy breve (ej: "¿Qué día buscas?")`;
+    flowInstruction = `ORDEN: Pregunta qué día busca agendar.`;
   } else if (!hasTime) {
-    flowInstruction = `ORDEN: Pregunta qué hora le acomoda. Sé muy breve. Opciones disponibles para el ${collectedData?.date}: ${availableText}`;
+    flowInstruction = `ORDEN: Pregunta qué hora le acomoda para el ${collectedData?.date}. Opciones: ${availableText}`;
   } else {
-    // Caso de respaldo (fallback)
-    flowInstruction = `ORDEN: Pide lo que falta para agendar (Nombre, Fecha o Hora). Opciones de hoy: ${availableText}`;
+    flowInstruction = `ORDEN: Pide lo que falta para agendar. Disponibilidad: ${availableText}`;
   }
 
+  const config = business.weekly_schedule?._config || {};
+  const isConversational = config.prompt_mode === 'conversacional';
+  
   return `
-Eres el asistente de Clínica Smile. Sé muy seco y breve.
+${business.prompt_custom || 'Eres el asistente de Clínica Smile.'}
 ${statusMemo}
 
 ${flowInstruction}
 
-PROHIBICIÓN CRÍTICA: NUNCA, bajo ningún concepto, escribas el texto que está entre ###. Es solo para tu memoria. Tu respuesta al cliente debe ser limpia.
+REGLAS DE RESPUESTA:
+1. Sé amable pero ve directo al punto.
+2. ${isConversational ? 'Puedes charlar brevemente antes de agendar si el usuario hace preguntas.' : 'Prioriza agendar lo antes posible.'}
+3. PROHIBICIÓN CRÍTICA: NUNCA escribas el texto que está entre ###. Es solo para tu memoria interna.
 `.trim();
 }
 
