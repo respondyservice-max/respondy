@@ -392,11 +392,15 @@ export function createDynamicPrompt(
     flowInstruction = `ORDEN: CONFIRMA AHORA. Responde exactamente: "✓ Cita agendada. Paciente: ${collectedData!.name}, Día: ${collectedData!.date}, Hora: ${collectedData!.time}, Servicio: Consulta."`;
   } else if (hasDate && hasTime && !isSlotFree) {
     flowInstruction = `ORDEN: La hora ${collectedData?.time} está ocupada para el ${collectedData?.date}. Ofrece solo estas: ${availableText}.`;
+  } else if (!hasName) {
+    flowInstruction = `ORDEN: Pregunta el nombre completo del paciente. Sé muy breve (ej: "¿A nombre de quién agendamos?")`;
+  } else if (!hasDate) {
+    flowInstruction = `ORDEN: Pregunta qué día busca agendar. Sé muy breve (ej: "¿Qué día buscas?")`;
+  } else if (!hasTime) {
+    flowInstruction = `ORDEN: Pregunta qué hora le acomoda. Sé muy breve. Opciones disponibles para el ${collectedData?.date}: ${availableText}`;
   } else {
-    flowInstruction = `ORDEN: Pide SOLO lo faltante. Sé muy breve.
-- Si falta nombre: "¿A nombre de quién agendamos?"
-- Si falta fecha: "¿Qué día buscas?"
-- Si falta hora: "¿Qué hora te acomoda?" (Opciones: ${availableText})`;
+    // Caso de respaldo (fallback)
+    flowInstruction = `ORDEN: Pide lo que falta para agendar (Nombre, Fecha o Hora). Opciones de hoy: ${availableText}`;
   }
 
   return `
