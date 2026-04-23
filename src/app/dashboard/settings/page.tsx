@@ -94,10 +94,14 @@ export default function Settings() {
         setAiBotEnabled(data.ai_bot_enabled !== false);
         setSchedulingMode(data.scheduling_mode || 'auto');
         setBookingLink(data.booking_link || '');
-        setAppointmentDuration(data.appointment_duration || 45);
-        setMinLeadTime(data.min_lead_time_hours || 2);
-        setServiceName(data.service_name || 'Consulta');
-        setServiceDescription(data.service_description || '');
+        
+        // Cargar ajustes desde el JSON de weekly_schedule o columnas (fallback)
+        const config = data.weekly_schedule?._config || {};
+        setAppointmentDuration(config.appointment_duration || data.appointment_duration || 45);
+        setMinLeadTime(config.min_lead_time_hours || data.min_lead_time_hours || 2);
+        setServiceName(config.service_name || data.service_name || 'Consulta');
+        setServiceDescription(config.service_description || data.service_description || '');
+
         if (data.google_calendar_id) {
           setCalendarConnected(true);
         }
@@ -218,23 +222,32 @@ export default function Settings() {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
+
+      // Guardamos los ajustes avanzados DENTRO de weekly_schedule para evitar error 400 si las columnas no existen
+      const updatedSchedule = {
+        ...weeklySchedule,
+        _config: {
+          appointment_duration: appointmentDuration,
+          min_lead_time_hours: minLeadTime,
+          service_name: serviceName,
+          service_description: serviceDescription
+        }
+      };
+
       const { error } = await supabase
         .from('businesses')
         .update({ 
           scheduling_mode: schedulingMode, 
           booking_link: bookingLink,
-          appointment_duration: appointmentDuration,
-          min_lead_time_hours: minLeadTime,
-          service_name: serviceName,
-          service_description: serviceDescription,
-          weekly_schedule: weeklySchedule 
+          weekly_schedule: updatedSchedule
         })
         .eq('user_id', user.id);
+
       if (!error) {
         setSchedulingMessage('✅ Configuración guardada');
         setTimeout(() => setSchedulingMessage(''), 3000);
       } else {
-        setSchedulingMessage('❌ Error al guardar');
+        setSchedulingMessage('❌ Error al guardar: ' + error.message);
       }
     } catch (e) {
       console.error(e);

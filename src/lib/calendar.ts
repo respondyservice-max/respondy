@@ -67,8 +67,9 @@ export async function checkAvailability(
   date: string, // YYYY-MM-DD
   durationMinutes?: number
 ): Promise<AvailabilityResult> {
-  const duration = durationMinutes || business.appointment_duration || 45;
-  const leadTimeHours = business.min_lead_time_hours || 0;
+  const config = business.weekly_schedule?._config || {};
+  const duration = durationMinutes || config.appointment_duration || business.appointment_duration || 45;
+  const leadTimeHours = config.min_lead_time_hours || business.min_lead_time_hours || 0;
 
   const auth = await getGoogleCalendarClient(business);
   const calendar = google.calendar({ version: 'v3', auth });
@@ -215,14 +216,16 @@ export async function createCalendarEvent(
     const auth = await getGoogleCalendarClient(business);
     const calendar = google.calendar({ version: 'v3', auth });
 
-    const duration = params.durationMinutes || business.appointment_duration || 45;
-    const srvName = business.service_name || params.service || 'Consulta';
+    const config = business.weekly_schedule?._config || {};
+    const duration = params.durationMinutes || config.appointment_duration || business.appointment_duration || 45;
+    const srvName = config.service_name || business.service_name || params.service || 'Consulta';
+    const srvDesc = config.service_description || business.service_description || '';
     const startDateTime = new Date(`${params.date}T${params.time}:00`);
     const { data: event } = await calendar.events.insert({
       calendarId: business.google_calendar_id || 'primary',
       requestBody: {
         summary: `${srvName} - ${params.patientName}`,
-        description: `Paciente: ${params.patientName}\nTeléfono: ${params.patientPhone}\nServicio: ${srvName}\n${business.service_description || ''}`,
+        description: `Paciente: ${params.patientName}\nTeléfono: ${params.patientPhone}\nServicio: ${srvName}\n${srvDesc}`,
         start: {
           dateTime: `${params.date}T${params.time}:00`, // NO .000Z so it uses timeZone specified
           timeZone: 'America/Santiago',
