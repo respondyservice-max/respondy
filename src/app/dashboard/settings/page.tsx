@@ -291,7 +291,7 @@ Tu objetivo principal es agendar citas de forma eficiente. Siempre mantén el fo
             <div className="bg-white rounded-xl p-6 sm:p-8 shadow-sm border border-gray-100">
               <div className="flex justify-between items-center mb-5">
                 <h2 className="text-lg font-bold text-gray-900">📅 Modo de Agendamiento</h2>
-                {bookingLink && <a href={bookingLink.replace('/appointments/', '/r/')} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-sm font-semibold text-blue-600"><ExternalLink className="w-4 h-4" /> Editar en Google</a>}
+                {bookingLink && <a href={bookingLink.replace('/appointments/', '/r/')} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-sm font-semibold text-blue-600 hover:text-blue-700 bg-blue-50 px-4 py-2 rounded-lg transition-all"><ExternalLink className="w-4 h-4" /> Editar Disponibilidad en Google</a>}
               </div>
               <div className="grid grid-cols-2 gap-3 mb-6">
                 <button type="button" onClick={() => setSchedulingMode('link')} className={`p-4 rounded-xl border-2 text-left transition-all ${schedulingMode === 'link' ? 'border-blue-600 bg-blue-50' : 'border-gray-200'}`}>
@@ -322,32 +322,13 @@ Tu objetivo principal es agendar citas de forma eficiente. Siempre mantén el fo
                   <button onClick={() => setPromptMode('agendador')} className={`px-3 py-1.5 rounded-md text-xs font-semibold ${promptMode === 'agendador' ? 'bg-white shadow-sm' : 'text-gray-500'}`}>Agendador</button>
                 </div>
               </div>
-              <button onClick={handleGeneratePrompt} className="w-full py-2.5 bg-gray-900 text-white rounded-xl text-sm font-bold mb-4 hover:bg-black transition">✨ Generar Instrucciones Automáticamente</button>
+              <button onClick={handleGeneratePrompt} className="w-full py-2.5 bg-gray-900 text-white rounded-xl text-sm font-bold mb-4 hover:bg-black transition shadow-md">✨ Generar Instrucciones Automáticamente</button>
               <textarea value={form.prompt_custom} onChange={(e) => setForm({ ...form, prompt_custom: e.target.value })} rows={6} className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm font-mono bg-gray-50" />
-            </div>
-
-            <div className="bg-white rounded-xl p-6 sm:p-8 shadow-sm border border-gray-100">
-              <h2 className="text-lg font-bold text-gray-900 mb-6">📅 Horarios de Atención</h2>
-              <div className="space-y-2">
-                {Object.keys(weeklySchedule).map((day) => day !== '_config' && (
-                  <div key={day} className="flex items-center justify-between p-3 rounded-lg border border-gray-100 text-sm">
-                    <div className="flex items-center gap-3 w-1/3">
-                      <input type="checkbox" checked={weeklySchedule[day].active} onChange={(e) => setWeeklySchedule({...weeklySchedule, [day]: {...weeklySchedule[day], active: e.target.checked}})} className="w-4 h-4 text-blue-600 rounded" />
-                      <span className="font-semibold capitalize">{day}</span>
-                    </div>
-                    <div className="flex gap-2 items-center">
-                      <input type="time" value={weeklySchedule[day].open} disabled={!weeklySchedule[day].active} onChange={(e) => setWeeklySchedule({...weeklySchedule, [day]: {...weeklySchedule[day], open: e.target.value}})} className="px-2 py-1 border border-gray-200 rounded text-xs" />
-                      <span className="text-gray-400">-</span>
-                      <input type="time" value={weeklySchedule[day].close} disabled={!weeklySchedule[day].active} onChange={(e) => setWeeklySchedule({...weeklySchedule, [day]: {...weeklySchedule[day], close: e.target.value}})} className="px-2 py-1 border border-gray-200 rounded text-xs" />
-                    </div>
-                  </div>
-                ))}
-              </div>
             </div>
 
             <div className="pt-4">
               {saveMessage && <div className={`p-4 rounded-xl text-sm font-medium mb-4 ${saveMessage.includes('✅') ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'}`}>{saveMessage}</div>}
-              <button onClick={handleSaveAll} disabled={saving} className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl font-bold text-lg disabled:opacity-50">{saving ? 'Guardando...' : 'Guardar Configuración'}</button>
+              <button onClick={handleSaveAll} disabled={saving} className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl font-bold text-lg disabled:opacity-50 hover:shadow-lg transition-all duration-300">{saving ? 'Guardando...' : 'Guardar Configuración'}</button>
             </div>
           </div>
         )}
@@ -355,19 +336,19 @@ Tu objetivo principal es agendar citas de forma eficiente. Siempre mantén el fo
         {activeTab === 'integraciones' && (
           <div className="space-y-6">
             <div className="bg-white rounded-xl p-6 sm:p-8 shadow-sm border border-gray-100">
-              <h2 className="text-lg font-bold text-gray-900 mb-4">📱 WhatsApp (Zavu)</h2>
-              {zavuConnected ? <button onClick={handleDisconnectZavu} className="text-red-600 font-medium">Desconectar WhatsApp</button> : (
+              <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">📱 WhatsApp (Zavu)</h2>
+              {zavuConnected ? <button onClick={handleDisconnectZavu} className="text-red-600 font-medium hover:underline transition">Desconectar WhatsApp</button> : (
                 <form onSubmit={handleZavuSubmit} className="space-y-4">
                   <input type="password" value={zavuForm.zavu_api_key} onChange={(e) => setZavuForm({...zavuForm, zavu_api_key: e.target.value})} placeholder="API Key" className="w-full px-4 py-3 border border-gray-200 rounded-xl" />
                   <input type="text" value={zavuForm.zavu_sender_id} onChange={(e) => setZavuForm({...zavuForm, zavu_sender_id: e.target.value})} placeholder="Sender ID" className="w-full px-4 py-3 border border-gray-200 rounded-xl" />
-                  <button type="submit" disabled={zavuLoading} className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold">Conectar WhatsApp</button>
+                  <button type="submit" disabled={zavuLoading} className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition">Conectar WhatsApp</button>
                 </form>
               )}
             </div>
             <div className="bg-white rounded-xl p-6 sm:p-8 shadow-sm border border-gray-100">
-              <h2 className="text-lg font-bold text-gray-900 mb-4">📅 Google Calendar</h2>
-              {calendarConnected ? <button onClick={handleDisconnectCalendar} className="text-red-600 font-medium">Desconectar Calendar</button> : (
-                <button onClick={handleConnectCalendar} className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold">Conectar Google Calendar</button>
+              <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">📅 Google Calendar</h2>
+              {calendarConnected ? <button onClick={handleDisconnectCalendar} className="text-red-600 font-medium hover:underline transition">Desconectar Calendar</button> : (
+                <button onClick={handleConnectCalendar} className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition">Conectar Google Calendar</button>
               )}
             </div>
           </div>
