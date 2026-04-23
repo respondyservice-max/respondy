@@ -20,7 +20,7 @@ export default function Settings() {
   const [bookingLink, setBookingLink] = useState('');
   const [schedulingSaving, setSchedulingSaving] = useState(false);
   const [schedulingMessage, setSchedulingMessage] = useState('');
-  const [activeTab, setActiveTab] = useState<'negocio' | 'horarios' | 'integraciones'>('negocio');
+  const [activeTab, setActiveTab] = useState<'negocio' | 'agendamiento' | 'integraciones'>('negocio');
 
   const [form, setForm] = useState({
     name: '',
@@ -335,14 +335,14 @@ export default function Settings() {
             Negocio
           </button>
           <button
-            onClick={() => setActiveTab('horarios')}
+            onClick={() => setActiveTab('agendamiento')}
             className={`flex-1 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all ${
-              activeTab === 'horarios'
+              activeTab === 'agendamiento'
                 ? 'bg-white text-gray-900 shadow-sm'
                 : 'text-gray-500 hover:text-gray-700'
             }`}
           >
-            Horarios
+            Agendamiento
           </button>
           <button
             onClick={() => setActiveTab('integraciones')}
@@ -445,90 +445,187 @@ export default function Settings() {
           </form>
         )}
 
-        {/* TAB: HORARIOS */}
-        {activeTab === 'horarios' && (
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="bg-white rounded-xl p-6 sm:p-8 shadow-sm border border-gray-100">
-              <h2 className="text-lg font-bold mb-2 text-gray-900">Horario de Apertura Base</h2>
-              <p className="text-sm text-gray-500 mb-6">
-                Este horario actuará como base semanal de la IA. Si necesitas cerrar un día específico de manera excepcional (ej. vacaciones, feriados), simplemente crea un evento de "Todo el día" en tu Google Calendar y la IA asumirá que estás cerrado.
-              </p>
-              
-              <div className="space-y-4">
-                {Object.keys(weeklySchedule).map((day) => (
-                  <div key={day} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200">
-                    <div className="flex items-center gap-4 w-1/3">
-                      <input
-                        type="checkbox"
-                        checked={weeklySchedule[day].active}
-                        onChange={(e) => {
-                          setWeeklySchedule({
-                            ...weeklySchedule,
-                            [day]: { ...weeklySchedule[day], active: e.target.checked }
-                          });
-                        }}
-                        className="w-5 h-5 text-blue-600 rounded"
-                      />
-                      <span className="font-medium capitalize text-gray-700">{day}</span>
-                    </div>
-                    
-                    <div className="flex gap-4 items-center">
-                      <div className="flex items-center gap-2">
-                        <label className="text-xs text-gray-500">Apertura</label>
-                        <input
-                          type="time"
-                          value={weeklySchedule[day].open}
-                          disabled={!weeklySchedule[day].active}
-                          onChange={(e) => {
-                            setWeeklySchedule({
-                              ...weeklySchedule,
-                              [day]: { ...weeklySchedule[day], open: e.target.value }
-                            });
-                          }}
-                          className={`px-3 py-2 border border-gray-300 rounded-md text-sm ${!weeklySchedule[day].active ? 'opacity-50 bg-gray-100' : ''}`}
-                        />
-                      </div>
-                      <span className="text-gray-400">-</span>
-                      <div className="flex items-center gap-2">
-                        <label className="text-xs text-gray-500">Cierre</label>
-                        <input
-                          type="time"
-                          value={weeklySchedule[day].close}
-                          disabled={!weeklySchedule[day].active}
-                          onChange={(e) => {
-                            setWeeklySchedule({
-                              ...weeklySchedule,
-                              [day]: { ...weeklySchedule[day], close: e.target.value }
-                            });
-                          }}
-                          className={`px-3 py-2 border border-gray-300 rounded-md text-sm ${!weeklySchedule[day].active ? 'opacity-50 bg-gray-100' : ''}`}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+        {/* TAB: AGENDAMIENTO */}
+        {activeTab === 'agendamiento' && (
+          <div className="space-y-6">
+            {/* MODO DE AGENDAMIENTO */}
+            {calendarConnected ? (
+              <div className="bg-white rounded-xl p-6 sm:p-8 shadow-sm border border-gray-100">
+                <h2 className="text-lg font-bold text-gray-900 mb-1">🤖 Modo de agendamiento</h2>
+                <p className="text-sm text-gray-500 mb-6">
+                  Elige cómo quieres que tu IA gestione las citas.
+                </p>
 
-            {/* Save message */}
-            {saveMessage && (
-              <div className={`p-4 rounded-xl text-sm font-medium ${
-                saveMessage.includes('✅')
-                  ? 'bg-green-50 text-green-800 border border-green-200'
-                  : 'bg-red-50 text-red-800 border border-red-200'
-              }`}>
-                {saveMessage}
+                <div className="grid grid-cols-2 gap-3 mb-6">
+                  <button
+                    type="button"
+                    onClick={() => setSchedulingMode('auto')}
+                    className={`p-4 rounded-xl border-2 text-left transition-all ${
+                      schedulingMode === 'auto'
+                        ? 'border-blue-600 bg-blue-50'
+                        : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                  >
+                    <div className="text-2xl mb-2">⚡</div>
+                    <div className="font-semibold text-gray-900 text-sm">Automático</div>
+                    <div className="text-xs text-gray-500 mt-1">
+                      La IA pregunta la fecha y hora y agenda directamente
+                    </div>
+                    {schedulingMode === 'auto' && (
+                      <div className="mt-2 text-xs font-semibold text-blue-600">● Activo</div>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setSchedulingMode('link')}
+                    className={`p-4 rounded-xl border-2 text-left transition-all ${
+                      schedulingMode === 'link'
+                        ? 'border-blue-600 bg-blue-50'
+                        : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                  >
+                    <div className="text-2xl mb-2">🔗</div>
+                    <div className="font-semibold text-gray-900 text-sm">Enlace</div>
+                    <div className="text-xs text-gray-500 mt-1">
+                      La IA comparte el link de tu página de reservas
+                    </div>
+                    {schedulingMode === 'link' && (
+                      <div className="mt-2 text-xs font-semibold text-blue-600">● Activo</div>
+                    )}
+                  </button>
+                </div>
+
+                {schedulingMode === 'link' && (
+                  <div className="mb-5">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Link de tu página de reservas de Google Calendar
+                    </label>
+                    <input
+                      type="url"
+                      value={bookingLink}
+                      onChange={(e) => setBookingLink(e.target.value)}
+                      placeholder="https://calendar.google.com/calendar/appointments/..."
+                      className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition text-sm"
+                    />
+                  </div>
+                )}
+
+                {schedulingMessage && (
+                  <div className={`p-3 rounded-xl text-sm font-medium mb-4 ${
+                    schedulingMessage.includes('✅')
+                      ? 'bg-green-50 text-green-800 border border-green-200'
+                      : 'bg-red-50 text-red-800 border border-red-200'
+                  }`}>
+                    {schedulingMessage}
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  onClick={handleSaveSchedulingMode}
+                  disabled={schedulingSaving || (schedulingMode === 'link' && !bookingLink)}
+                  className="w-full py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl font-semibold hover:shadow-lg hover:shadow-blue-500/25 transition-all duration-300 disabled:opacity-40 text-sm"
+                >
+                  {schedulingSaving ? 'Guardando...' : 'Guardar modo'}
+                </button>
+              </div>
+            ) : (
+              <div className="bg-yellow-50 border border-yellow-200 p-6 rounded-xl">
+                <h3 className="font-bold text-yellow-800 flex items-center gap-2">
+                  ⚠️ Google Calendar no conectado
+                </h3>
+                <p className="text-yellow-700 text-sm mt-2">
+                  Para configurar el agendamiento y los horarios, primero debes conectar tu cuenta de Google Calendar en la pestaña de <strong>Integraciones</strong>.
+                </p>
               </div>
             )}
 
-            <button
-              type="submit"
-              disabled={saving}
-              className="w-full py-3.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl font-semibold hover:shadow-lg hover:shadow-blue-500/25 transition-all duration-300 disabled:opacity-50"
-            >
-              {saving ? 'Guardando...' : 'Guardar Horarios'}
-            </button>
-          </form>
+            {/* HORARIOS */}
+            {calendarConnected && (
+              <form onSubmit={handleSubmit} className="space-y-6">
+                <div className="bg-white rounded-xl p-6 sm:p-8 shadow-sm border border-gray-100">
+                  <h2 className="text-lg font-bold mb-2 text-gray-900">Horario de Atención</h2>
+                  <p className="text-sm text-gray-500 mb-6">
+                    Define las horas en las que la IA puede ofrecer citas. Estos horarios se cruzarán con tu disponibilidad en Google Calendar.
+                  </p>
+                  
+                  <div className="space-y-4">
+                    {Object.keys(weeklySchedule).map((day) => (
+                      <div key={day} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200">
+                        <div className="flex items-center gap-4 w-1/3">
+                          <input
+                            type="checkbox"
+                            checked={weeklySchedule[day].active}
+                            onChange={(e) => {
+                              setWeeklySchedule({
+                                ...weeklySchedule,
+                                [day]: { ...weeklySchedule[day], active: e.target.checked }
+                              });
+                            }}
+                            className="w-5 h-5 text-blue-600 rounded"
+                          />
+                          <span className="font-medium capitalize text-gray-700">{day}</span>
+                        </div>
+                        
+                        <div className="flex gap-4 items-center">
+                          <div className="flex items-center gap-2">
+                            <label className="text-xs text-gray-500">Apertura</label>
+                            <input
+                              type="time"
+                              value={weeklySchedule[day].open}
+                              disabled={!weeklySchedule[day].active}
+                              onChange={(e) => {
+                                setWeeklySchedule({
+                                  ...weeklySchedule,
+                                  [day]: { ...weeklySchedule[day], open: e.target.value }
+                                });
+                              }}
+                              className={`px-3 py-2 border border-gray-300 rounded-md text-sm ${!weeklySchedule[day].active ? 'opacity-50 bg-gray-100' : ''}`}
+                            />
+                          </div>
+                          <span className="text-gray-400">-</span>
+                          <div className="flex items-center gap-2">
+                            <label className="text-xs text-gray-500">Cierre</label>
+                            <input
+                              type="time"
+                              value={weeklySchedule[day].close}
+                              disabled={!weeklySchedule[day].active}
+                              onChange={(e) => {
+                                setWeeklySchedule({
+                                  ...weeklySchedule,
+                                  [day]: { ...weeklySchedule[day], close: e.target.value }
+                                });
+                              }}
+                              className={`px-3 py-2 border border-gray-300 rounded-md text-sm ${!weeklySchedule[day].active ? 'opacity-50 bg-gray-100' : ''}`}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {saveMessage && (
+                  <div className={`p-4 rounded-xl text-sm font-medium ${
+                    saveMessage.includes('✅')
+                      ? 'bg-green-50 text-green-800 border border-green-200'
+                      : 'bg-red-50 text-red-800 border border-red-200'
+                  }`}>
+                    {saveMessage}
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="w-full py-3.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl font-semibold hover:shadow-lg hover:shadow-blue-500/25 transition-all duration-300 disabled:opacity-50"
+                >
+                  {saving ? 'Guardando...' : 'Guardar Horarios'}
+                </button>
+              </form>
+            )}
+          </div>
         )}
 
         {/* TAB: INTEGRACIONES */}
@@ -660,93 +757,7 @@ export default function Settings() {
               )}
             </div>
 
-            {/* MODO DE AGENDAMIENTO */}
-            {calendarConnected && (
-              <div className="bg-white rounded-xl p-6 sm:p-8 shadow-sm border border-gray-100">
-                <h2 className="text-lg font-bold text-gray-900 mb-1">🤖 Modo de agendamiento</h2>
-                <p className="text-sm text-gray-500 mb-6">
-                  Elige cómo quieres que tu IA gestione las citas.
-                </p>
 
-                {/* Switch visual */}
-                <div className="grid grid-cols-2 gap-3 mb-6">
-                  <button
-                    type="button"
-                    onClick={() => setSchedulingMode('auto')}
-                    className={`p-4 rounded-xl border-2 text-left transition-all ${
-                      schedulingMode === 'auto'
-                        ? 'border-blue-600 bg-blue-50'
-                        : 'border-gray-200 hover:border-gray-300'
-                    }`}
-                  >
-                    <div className="text-2xl mb-2">⚡</div>
-                    <div className="font-semibold text-gray-900 text-sm">Automático</div>
-                    <div className="text-xs text-gray-500 mt-1">
-                      La IA pregunta la fecha y hora y agenda directamente
-                    </div>
-                    {schedulingMode === 'auto' && (
-                      <div className="mt-2 text-xs font-semibold text-blue-600">● Activo</div>
-                    )}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setSchedulingMode('link')}
-                    className={`p-4 rounded-xl border-2 text-left transition-all ${
-                      schedulingMode === 'link'
-                        ? 'border-blue-600 bg-blue-50'
-                        : 'border-gray-200 hover:border-gray-300'
-                    }`}
-                  >
-                    <div className="text-2xl mb-2">🔗</div>
-                    <div className="font-semibold text-gray-900 text-sm">Enlace</div>
-                    <div className="text-xs text-gray-500 mt-1">
-                      La IA comparte el link de tu página de reservas
-                    </div>
-                    {schedulingMode === 'link' && (
-                      <div className="mt-2 text-xs font-semibold text-blue-600">● Activo</div>
-                    )}
-                  </button>
-                </div>
-
-                {schedulingMode === 'link' && (
-                  <div className="mb-5">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Link de tu página de reservas de Google Calendar
-                    </label>
-                    <input
-                      type="url"
-                      value={bookingLink}
-                      onChange={(e) => setBookingLink(e.target.value)}
-                      placeholder="https://calendar.google.com/calendar/appointments/..."
-                      className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition text-sm"
-                    />
-                    <p className="text-xs text-gray-400 mt-2">
-                      Encuéntralo en Google Calendar → Páginas de reservas → copiar enlace 🔗
-                    </p>
-                  </div>
-                )}
-
-                {schedulingMessage && (
-                  <div className={`p-3 rounded-xl text-sm font-medium mb-4 ${
-                    schedulingMessage.includes('✅')
-                      ? 'bg-green-50 text-green-800 border border-green-200'
-                      : 'bg-red-50 text-red-800 border border-red-200'
-                  }`}>
-                    {schedulingMessage}
-                  </div>
-                )}
-
-                <button
-                  type="button"
-                  onClick={handleSaveSchedulingMode}
-                  disabled={schedulingSaving || (schedulingMode === 'link' && !bookingLink)}
-                  className="w-full py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl font-semibold hover:shadow-lg hover:shadow-blue-500/25 transition-all duration-300 disabled:opacity-40 text-sm"
-                >
-                  {schedulingSaving ? 'Guardando...' : 'Guardar modo'}
-                </button>
-              </div>
-            )}
           </div>
         )}
       </main>
