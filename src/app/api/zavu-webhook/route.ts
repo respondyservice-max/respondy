@@ -19,391 +19,168 @@ export async function POST(request: NextRequest) {
   try {
     const data = await request.json();
     console.log('--- NUEVO MENSAJE DE ZAVU ---');
-    console.log('Data recibida:', JSON.stringify(data, null, 2));
 
     const senderIdFromZavu = data.senderId;
     const messageText = data.data?.text;
     const phoneFrom = data.data?.from;
 
-    // Solo procesamos mensajes entrantes
-    if (data.type !== 'message.inbound') {
-      console.log('Ignorando evento tipo:', data.type);
-      return NextResponse.json({ success: true, ignored: true });
-    }
+    if (data.type !== 'message.inbound') return NextResponse.json({ success: true, ignored: true });
+    if (!senderIdFromZavu || !messageText) return NextResponse.json({ error: 'Data incompleta' }, { status: 400 });
 
-    if (!senderIdFromZavu || !messageText) {
-      console.log('Falta sender_id o texto en el mensaje');
-      return NextResponse.json({ error: 'Data incompleta' }, { status: 400 });
-    }
-
-    // ── 1. Encontrar negocio por sender_id ───────────────────────────────────
-    const { data: businesses, error: dbError } = await supabaseAdmin
-      .from('businesses')
-      .select('*');
-
-    if (dbError) {
-      console.error('Error al consultar negocios en DB:', dbError);
-    }
-
+    // 1. Encontrar negocio
+    const { data: businesses } = await supabaseAdmin.from('businesses').select('*');
     let targetBusiness = null;
-    for (const business of businesses || []) {
-      try {
-        if (!business.zavu_sender_id_encrypted) continue;
-        const decryptedSenderId = decrypt(business.zavu_sender_id_encrypted);
-        if (decryptedSenderId === senderIdFromZavu) {
-          targetBusiness = business;
-          console.log('Negocio encontrado:', business.name);
-          break;
-        }
-      } catch (err) {
-        console.error('Error al decriptar sender_id para negocio:', business.name);
+    for (const b of businesses || []) {
+      if (b.zavu_sender_id_encrypted && decrypt(b.zavu_sender_id_encrypted) === senderIdFromZavu) {
+        targetBusiness = b; break;
       }
     }
+    if (!targetBusiness) return NextResponse.json({ error: 'Business no encontrado' }, { status: 404 });
+    if (!targetBusiness.ai_bot_enabled) return NextResponse.json({ success: true, message: 'Agente desactivado' });
 
-    if (!targetBusiness) {
-      console.log('No se encontró ningún negocio con ese Sender ID');
-      return NextResponse.json({ error: 'Business no encontrado' }, { status: 404 });
-    }
+    const normalizedPhone = phoneFrom.replace('+', '');
 
-    // Verificar si el agente está activo
-    if (!targetBusiness.ai_bot_enabled) {
-      console.log('🔴 Agente IA desactivado para este negocio, ignorando mensaje');
-      return NextResponse.json({ success: true, message: 'Agente desactivado' });
-    }
+    // ── 0. GUARDAR MENSAJE DE USUARIO AL INICIO ──
+    await supabaseAdmin.from('conversations').insert({
+      business_id: targetBusiness.id,
+      phone_from: normalizedPhone,
+      message_type: 'incoming',
+      message_text: messageText,
+    });
+
+    // Pequeño delay de 1.5s para humanizar
+    await new Promise(resolve => setTimeout(resolve, 1500));
 
     const zavuApiKey = decrypt(targetBusiness.zavu_api_key_encrypted);
 
-    // Normalizar teléfono (quitar el + para búsquedas consistentes)
-    const normalizedPhone = phoneFrom.replace('+', '');
-
-    // ── MODO ENLACE: compartir link de Google Calendar y terminar ────────────
+    // ── MODO ENLACE ──
     if (targetBusiness.scheduling_mode === 'link' && targetBusiness.booking_link) {
-      console.log('Modo enlace activo, compartiendo link de reservas...');
-      const linkResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      const linkGroqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${process.env.GROQ_API_KEY || ''}`,
-        },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.GROQ_API_KEY}` },
         body: JSON.stringify({
           model: 'llama-3.1-8b-instant',
-          messages: [
-            {
-              role: 'system',
-              content: `Eres el asistente de ${targetBusiness.name}. Tu única función es responder de manera amigable y breve que para agendar una cita, el paciente debe usar el siguiente enlace: ${targetBusiness.booking_link}\n\nResponde en español, de forma cordial y sin inventar información extra.`
-            },
-            { role: 'user', content: messageText }
-          ],
+          messages: [{ role: 'system', content: `Eres el asistente de ${targetBusiness.name}. Responde amable que para agendar usen: ${targetBusiness.booking_link}` }, { role: 'user', content: messageText }],
           temperature: 0.5,
         }),
       });
-      const linkGroqData = await linkResponse.json();
-      const linkBotResponse = linkGroqData.choices?.[0]?.message?.content
-        || `Para agendar tu cita, usa este enlace: ${targetBusiness.booking_link}`;
-
+      const linkData = await linkGroqRes.json();
+      const linkBotResponse = linkData.choices?.[0]?.message?.content || `Agendar aquí: ${targetBusiness.booking_link}`;
+      
       await fetch('https://api.zavu.dev/v1/messages', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${zavuApiKey}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ senderId: senderIdFromZavu, to: phoneFrom, text: linkBotResponse }),
       });
-
-      // Guardar en conversación y limpiar antiguos
-      await supabaseAdmin.from('conversations').insert([
-        { business_id: targetBusiness.id, phone_from: normalizedPhone, message_type: 'incoming', message_text: messageText },
-        { business_id: targetBusiness.id, phone_from: normalizedPhone, message_type: 'outgoing', message_text: linkBotResponse },
-      ]);
-      const { data: toKeep } = await supabaseAdmin.from('conversations').select('id')
-        .eq('business_id', targetBusiness.id).eq('phone_from', normalizedPhone)
-        .order('created_at', { ascending: false }).limit(6);
-      if (toKeep && toKeep.length > 0) {
-        await supabaseAdmin.from('conversations').delete()
-          .eq('business_id', targetBusiness.id).eq('phone_from', normalizedPhone)
-          .not('id', 'in', `(${toKeep.map(m => m.id).join(',')})`);
-      }
+      await supabaseAdmin.from('conversations').insert({ business_id: targetBusiness.id, phone_from: normalizedPhone, message_type: 'outgoing', message_text: linkBotResponse });
       return NextResponse.json({ success: true });
     }
 
-    // ── 2. Obtener historial previo (solo mensajes antiguos) ──────────────────
-    // ── 2. Obtener historial previo estructurado ──────────────────
+    // ── 2. Obtener historial estructurado (últimos 10) ──
     const { data: previousMessages } = await supabaseAdmin
       .from('conversations')
       .select('message_type, message_text')
       .eq('business_id', targetBusiness.id)
       .eq('phone_from', normalizedPhone)
       .order('created_at', { ascending: false })
-      .limit(15);
+      .limit(10);
 
-    const historyText = (previousMessages || [])
-      .reverse()
-      .map(m => `${m.message_type === 'incoming' ? 'Usuario' : 'Asistente'}: ${m.message_text}`)
-      .join('\n');
+    const historyText = (previousMessages || []).reverse()
+      .map(m => `${m.message_type === 'incoming' ? 'Usuario' : 'Asistente'}: ${m.message_text}`).join('\n');
     
-    const combinedContext = `${historyText}\nUsuario: ${messageText}`;
-    console.log('Contexto para parseo (estructurado):\n', combinedContext);
-
-    // ── 3. Parsear datos (ahora con IA asíncrona) ──
-    const parsed = await parseClientMessage(combinedContext);
+    // ── 3. Parsear datos con IA ──
+    const parsed = await parseClientMessage(`${historyText}\nUsuario: ${messageText}`);
     
-    // ── 3.1 MEMORIA DE BASE DE DATOS (ESTADO REAL) ──
-    const thirtyMinsAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+    // ── 3.1 Memoria de Borradores (15 mins) ──
+    const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
     let { data: sessionData } = await supabaseAdmin
-      .from('appointments')
-      .select('*')
-      .eq('business_id', targetBusiness.id)
-      .eq('patient_phone', normalizedPhone)
-      .eq('status', 'draft') // Buscamos una sesión activa (borrador)
-      .gte('created_at', thirtyMinsAgo)
-      .order('created_at', { ascending: false })
-      .limit(1);
+      .from('appointments').select('*').eq('business_id', targetBusiness.id).eq('patient_phone', normalizedPhone)
+      .eq('status', 'draft').gte('created_at', fifteenMinsAgo).order('created_at', { ascending: false }).limit(1);
 
     let sessionAppt = sessionData?.[0];
 
-    // Si la IA detectó algo NUEVO, actualizamos la ficha en DB
+    // Actualizar borrador
     if (parsed.patientName || parsed.date || parsed.time) {
       const updateData: any = {};
       if (parsed.patientName) updateData.patient_name = parsed.patientName;
-      
-      // Manejar fecha/hora persistente
-      let finalDateStr = parsed.date || (sessionAppt?.date_time ? sessionAppt.date_time.split('T')[0] : null);
-      let finalTimeStr = parsed.time || (sessionAppt?.date_time ? sessionAppt.date_time.split('T')[1].substring(0, 5) : null);
-      
-      if (finalDateStr && finalTimeStr) {
-        updateData.date_time = new Date(`${finalDateStr}T${finalTimeStr}:00`).toISOString();
-      }
+      let fDate = parsed.date || (sessionAppt?.date_time ? sessionAppt.date_time.split('T')[0] : null);
+      let fTime = parsed.time || (sessionAppt?.date_time ? sessionAppt.date_time.split('T')[1].substring(0, 5) : null);
+      if (fDate && fTime) updateData.date_time = new Date(`${fDate}T${fTime}:00`).toISOString();
 
       if (sessionAppt) {
-        const { data: updated } = await supabaseAdmin
-          .from('appointments')
-          .update(updateData)
-          .eq('id', sessionAppt.id)
-          .select();
-        sessionAppt = updated?.[0];
-      } else if (parsed.patientName) {
-        const { data: inserted } = await supabaseAdmin
-          .from('appointments')
-          .insert({
-            business_id: targetBusiness.id,
-            patient_phone: normalizedPhone,
-            patient_name: parsed.patientName,
-            status: 'draft',
-            date_time: (parsed.date && parsed.time) ? new Date(`${parsed.date}T${parsed.time}:00`).toISOString() : null
-          })
-          .select();
-        sessionAppt = inserted?.[0];
+        const { data: u } = await supabaseAdmin.from('appointments').update(updateData).eq('id', sessionAppt.id).select();
+        sessionAppt = u?.[0];
+      } else {
+        const { data: i } = await supabaseAdmin.from('appointments').insert({
+          business_id: targetBusiness.id, patient_phone: normalizedPhone,
+          patient_name: parsed.patientName || 'Paciente', status: 'draft',
+          date_time: (fDate && fTime) ? new Date(`${fDate}T${fTime}:00`).toISOString() : null
+        }).select();
+        sessionAppt = i?.[0];
       }
     }
 
-    // Datos finales consolidados (Prioridad: lo que ya está grabado en piedra)
-    const finalName: string | null = sessionAppt?.patient_name || parsed.patientName || null;
-    const finalDateStr: string | null = (sessionAppt?.date_time ? (sessionAppt.date_time as string).split('T')[0] : parsed.date) || null;
-    const finalTimeStr: string | null = (sessionAppt?.date_time ? (sessionAppt.date_time as string).split('T')[1].substring(0, 5) : parsed.time) || null;
+    const finalName = sessionAppt?.patient_name || parsed.patientName || null;
+    const finalDateStr = (sessionAppt?.date_time ? sessionAppt.date_time.split('T')[0] : parsed.date) || null;
+    const finalTimeStr = (sessionAppt?.date_time ? sessionAppt.date_time.split('T')[1].substring(0, 5) : parsed.time) || null;
 
-    const hasCalendar = !!targetBusiness.google_calendar_access_token_encrypted;
-
-    // ── 3.2 Verificar disponibilidad con datos consolidados ──
+    // ── 4. Disponibilidad ──
     let availability = null;
-    const requestedSlot = (finalDateStr && finalTimeStr) ? { date: finalDateStr, time: finalTimeStr } : null;
-
-    if (hasCalendar && finalDateStr) {
-      try {
-        availability = await checkAvailability(targetBusiness, finalDateStr);
-      } catch (calErr) {
-        console.error('Error Calendar:', calErr);
-      }
+    if (targetBusiness.google_calendar_access_token_encrypted && finalDateStr) {
+      availability = await checkAvailability(targetBusiness, finalDateStr);
     }
 
-    // ── 3.5 Buscar citas futuras del paciente ─────────────────────────────────
-    let upcomingAppointments = [];
-    try {
-      const { data: currentAppts } = await supabaseAdmin
-        .from('appointments')
-        .select('*')
-        .eq('business_id', targetBusiness.id)
-        .gte('date_time', new Date().toISOString())
-        .ilike('patient_phone', `%${normalizedPhone}%`);
+    // Citas futuras para reagendar/cancelar
+    const { data: upcoming } = await supabaseAdmin.from('appointments').select('*').eq('business_id', targetBusiness.id).gte('date_time', new Date().toISOString()).ilike('patient_phone', `%${normalizedPhone}%`);
 
-      if (currentAppts) upcomingAppointments = currentAppts;
-    } catch (e) {
-      console.error('Error buscando citas del paciente', e);
-    }
-
-    // ── 4. Crear prompt dinámico para Groq ────────────────────────────────────
-    const dynamicPrompt = createDynamicPrompt(
-      targetBusiness,
-      availability,
-      requestedSlot,
-      upcomingAppointments,
-      { name: finalName, date: finalDateStr, time: finalTimeStr, service: parsed.service }
-    );
-    console.log('Prompt dinámico creado para Groq.');
-
-    // ── 5. Llamar a Groq con el prompt dinámico ───────────────────────────────
-    if (!process.env.GROQ_API_KEY) {
-      console.error('ERROR CRÍTICO: GROQ_API_KEY no está configurada.');
-    }
-
-    const chatHistory = (previousMessages || [])
-      .reverse()
-      .map((msg) => ({
-        role: msg.message_type === 'incoming' ? 'user' : 'assistant',
-        content: msg.message_text,
-      }));
+    // ── 5. Respuesta final con Groq ──
+    const dynamicPrompt = createDynamicPrompt(targetBusiness, availability, (finalDateStr && finalTimeStr) ? { date: finalDateStr, time: finalTimeStr } : null, upcoming || [], { name: finalName, date: finalDateStr, time: finalTimeStr, service: parsed.service });
+    const chatHistory = (previousMessages || []).reverse().map(m => ({ role: m.message_type === 'incoming' ? 'user' : 'assistant', content: m.message_text }));
 
     const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.GROQ_API_KEY || ''}`,
-      },
-      body: JSON.stringify({
-        model: 'llama-3.1-8b-instant',
-        messages: [
-          { role: 'system', content: dynamicPrompt },
-          ...chatHistory,
-          { role: 'user', content: messageText },
-        ],
-        temperature: 0.5,
-      }),
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.GROQ_API_KEY}` },
+      body: JSON.stringify({ model: 'llama-3.1-8b-instant', messages: [{ role: 'system', content: dynamicPrompt }, ...chatHistory, { role: 'user', content: messageText }], temperature: 0.4 }),
     });
-
     const groqData = await groqRes.json();
+    const botResponse = groqData.choices?.[0]?.message?.content || 'Lo siento, tuve un problema.';
 
-    if (groqData.error) {
-      console.error('ERROR DE GROQ API:', JSON.stringify(groqData.error, null, 2));
-    }
+    // ── 6. Acciones Calendar (Agendar/Cancelar/Reagendar) ──
+    const conf = extractConfirmation(botResponse);
+    const canc = extractCancellation(botResponse);
+    const reag = await extractReschedule(botResponse);
 
-    const botResponse = groqData.choices?.[0]?.message?.content
-      || 'Lo siento, tuve un problema al procesar tu mensaje. ¿Puedes intentarlo de nuevo?';
-
-    console.log('Respuesta de Groq:', botResponse);
-
-    // ── 6. Si el bot confirmó, canceló o reagendó ────────────────────────────
-
-    // CASO A: REAGENDAR
-    const rescheduleData = await extractReschedule(botResponse);
-    if (hasCalendar && rescheduleData) {
-      console.log('🔄 Cita reagendada por el bot...', rescheduleData);
-      const apptToMove = upcomingAppointments.find((a: any) => a.id === rescheduleData.id);
-      if (apptToMove && rescheduleData.date && rescheduleData.time) {
-        // En google
-        if (apptToMove.google_event_id) {
-          await updateCalendarEvent(targetBusiness, apptToMove.google_event_id, rescheduleData.date, rescheduleData.time);
+    if (reag && upcoming) {
+        const a = upcoming.find(x => x.id === reag.id);
+        if (a && reag.date && reag.time) {
+            if (a.google_event_id) await updateCalendarEvent(targetBusiness, a.google_event_id, reag.date, reag.time);
+            await supabaseAdmin.from('appointments').update({ date_time: new Date(`${reag.date}T${reag.time}:00`).toISOString() }).eq('id', a.id);
         }
-        // En DB
-        const startDateTime = new Date(`${rescheduleData.date}T${rescheduleData.time}:00`);
-        await supabaseAdmin.from('appointments').update({ date_time: startDateTime.toISOString() }).eq('id', apptToMove.id);
-      }
-    }
-    // CASO B: CANCELAR
-    else if (hasCalendar && extractCancellation(botResponse)) {
-      const cancelId = extractCancellation(botResponse);
-      console.log('❌ Cita cancelada por el bot...', cancelId);
-      const apptToCancel = upcomingAppointments.find((a: any) => a.id === cancelId);
-      if (apptToCancel) {
-        // En google
-        if (apptToCancel.google_event_id) {
-          await deleteCalendarEvent(targetBusiness, apptToCancel.google_event_id);
-        }
-        // En DB
-        await supabaseAdmin.from('appointments').delete().eq('id', apptToCancel.id);
-      }
-    }
-      // CASO C: AGENDAR NUEVA
-    else if (extractConfirmation(botResponse) && hasCalendar) {
-      console.log('✅ Cita confirmada por el bot. Creando evento en Google Calendar...');
-      let finalDate = finalDateStr;
-      let finalTime = finalTimeStr;
-      let finalService = parsed.service || 'Consulta';
-      let patientName = finalName;
-
-      // Si el mensaje del usuario no tenía fecha o hora (ej: "sí, confirmo"),
-      // intentamos extraerlos de la respuesta de confirmación del bot
-      if (!finalDate || !finalTime || !patientName) {
-        const botParsed = await parseClientMessage(botResponse);
-        finalDate = finalDate || botParsed.date;
-        finalTime = finalTime || botParsed.time;
-        finalService = parsed.service || botParsed.service || 'Consulta';
-        patientName = patientName || botParsed.patientName;
-      }
-
-      patientName = patientName || `Paciente (${phoneFrom})`;
-
-      if (finalDate && finalTime && patientName) {
-        const eventResult = await createCalendarEvent(targetBusiness, {
-          patientName: patientName,
-          patientPhone: normalizedPhone,
-          service: finalService,
-          date: finalDate,
-          time: finalTime,
-        });
-
-        if (eventResult.success) {
-          console.log('📅 Evento creado en Calendar:', eventResult.eventId);
-        } else {
-          console.error('Error creando evento:', eventResult.error);
-        }
-      } else {
-        console.warn('Bot confirmó cita pero no se detectó fecha/hora completa ni en el mensaje del usuario ni del bot.');
-      }
+    } else if (canc && upcoming) {
+        const a = upcoming.find(x => x.id === canc);
+        if (a && a.google_event_id) await deleteCalendarEvent(targetBusiness, a.google_event_id);
+        if (a) await supabaseAdmin.from('appointments').delete().eq('id', a.id);
+    } else if (conf) {
+        let fD = finalDateStr, fT = finalTimeStr, fN = finalName;
+        if (!fD || !fT || !fN) { const bP = await parseClientMessage(botResponse); fD = fD || bP.date; fT = fT || bP.time; fN = fN || bP.patientName; }
+        if (fD && fT && fN) await createCalendarEvent(targetBusiness, { patientName: fN, patientPhone: normalizedPhone, service: parsed.service || 'Consulta', date: fD, time: fT });
     }
 
-    // ── 7. Enviar respuesta al cliente via Zavu ───────────────────────────────
-    console.log('Enviando respuesta a Zavu para:', normalizedPhone);
-    const zavuRes = await fetch('https://api.zavu.dev/v1/messages', {
+    // ── 7. Enviar a Zavu y guardar ──
+    await fetch('https://api.zavu.dev/v1/messages', {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${zavuApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        senderId: senderIdFromZavu,
-        to: phoneFrom, // Zavu might need the + if provided, but we keep the DB clean
-        text: botResponse,
-      }),
+      headers: { 'Authorization': `Bearer ${zavuApiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ senderId: senderIdFromZavu, to: phoneFrom, text: botResponse }),
     });
+    await supabaseAdmin.from('conversations').insert({ business_id: targetBusiness.id, phone_from: normalizedPhone, message_type: 'outgoing', message_text: botResponse });
 
-    const zavuResult = await zavuRes.json();
-    console.log('Resultado Zavu:', zavuRes.status, JSON.stringify(zavuResult, null, 2));
-
-    // ── 8. Guardar AMBOS mensajes en la BD al final para evitar duplicados y race conditions
-    await supabaseAdmin.from('conversations').insert([
-      {
-        business_id: targetBusiness.id,
-        phone_from: normalizedPhone,
-        message_type: 'incoming',
-        message_text: messageText,
-      },
-      {
-        business_id: targetBusiness.id,
-        phone_from: normalizedPhone,
-        message_type: 'outgoing',
-        message_text: botResponse,
-      }
-    ]);
-
-    // ── 9. Limpiar historial antiguo para no saturar la base de datos ──────────────────
-    // Mantener solo los últimos 6 mensajes por número para ahorrar espacio
-    const { data: messagesToKeep } = await supabaseAdmin
-      .from('conversations')
-      .select('id')
-      .eq('business_id', targetBusiness.id)
-      .eq('phone_from', normalizedPhone)
-      .order('created_at', { ascending: false })
-      .limit(6);
-
-    if (messagesToKeep && messagesToKeep.length > 0) {
-      const keepIds = messagesToKeep.map(m => m.id);
-      await supabaseAdmin
-        .from('conversations')
-        .delete()
-        .eq('business_id', targetBusiness.id)
-        .eq('phone_from', normalizedPhone)
-        .not('id', 'in', `(${keepIds.join(',')})`);
-    }
+    // Limpieza
+    const { data: mKeep } = await supabaseAdmin.from('conversations').select('id').eq('business_id', targetBusiness.id).eq('phone_from', normalizedPhone).order('created_at', { ascending: false }).limit(6);
+    if (mKeep?.length) await supabaseAdmin.from('conversations').delete().eq('business_id', targetBusiness.id).eq('phone_from', normalizedPhone).not('id', 'in', `(${mKeep.map(m => m.id).join(',')})`);
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('Error en webhook:', error);
+    console.error('Error:', error);
     return NextResponse.json({ error: 'Error interno' }, { status: 500 });
   }
 }

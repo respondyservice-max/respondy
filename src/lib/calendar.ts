@@ -343,10 +343,11 @@ export async function parseClientMessage(history: string): Promise<{
             Tu misión es extraer: patientName, date (YYYY-MM-DD), time (HH:mm) y service.
             
             REGLAS DE ORO:
-            1. ANALIZA TODO EL HISTORIAL: Si el usuario dijo "mañana" en el mensaje anterior y ahora dice "a las 5", la fecha DEBE ser la de mañana.
-            2. PERSISTENCIA: Si un dato ya fue mencionado (ej: el nombre), mantenlo. No devuelvas null si el dato está en el historial.
-            3. HORAS: "a las 5" -> "17:00", "a las 10" -> "10:00". (Clínica dental: 1-7 son PM, 8-12 son AM).
-            4. FECHAS RELATIVAS: "mañana", "el próximo lunes", "hoy", etc., conviértelas a YYYY-MM-DD basándote en que hoy es ${todayStr}.
+            1. PRIORIDAD RECIENTE: El mensaje más RECIENTE es el que manda. Si antes dijo "Pedro" y ahora dice "Juan", el nombre es "Juan".
+            2. ANALIZA TODO EL HISTORIAL: Usa el historial para resolver fechas como "mañana" o "el lunes".
+            3. PERSISTENCIA: Si un dato ya fue mencionado y no ha sido contradicho, mantenlo.
+            4. HORAS: 1-7 son PM (tarde), 8-12 son AM (mañana).
+            5. SOLO EXTRAE LO QUE ESTÉ ESCRITO: No inventes nombres si no los ves en el texto.
             
             Solo devuelve un objeto JSON puro: {"patientName": string, "date": string, "time": string, "service": string}`,
           },
