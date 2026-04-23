@@ -338,17 +338,19 @@ export async function parseClientMessage(history: string): Promise<{
         messages: [
           {
             role: 'system',
-            content: `Eres un extractor técnico de datos. Hoy es ${todayStr}.
+            content: `Eres un extractor técnico de datos para una clínica dental. Hoy es ${todayStr}.
             
-            Tu única misión es extraer los datos del paciente analizando TODO el historial. 
-            Reglas críticas:
-            1. El patientName debe ser el nombre completo. Si ya se detectó en el historial, NO lo borres, mantenlo siempre.
-            2. La date debe ser YYYY-MM-DD.
-            3. La time debe ser HH:mm (24h). 
-               IMPORTANTE: En una clínica dental, si el usuario dice "a las 4", "a las 5", "a las 2", etc. (números del 1 al 7), asume SIEMPRE que son de la tarde (13:00 a 19:00). Ejemplo: "a las 4" -> "16:00".
-            4. Solo devuelve un objeto JSON puro: {"patientName": string, "date": string, "time": string, "service": string}`,
+            Tu misión es extraer: patientName, date (YYYY-MM-DD), time (HH:mm) y service.
+            
+            REGLAS DE ORO:
+            1. ANALIZA TODO EL HISTORIAL: Si el usuario dijo "mañana" en el mensaje anterior y ahora dice "a las 5", la fecha DEBE ser la de mañana.
+            2. PERSISTENCIA: Si un dato ya fue mencionado (ej: el nombre), mantenlo. No devuelvas null si el dato está en el historial.
+            3. HORAS: "a las 5" -> "17:00", "a las 10" -> "10:00". (Clínica dental: 1-7 son PM, 8-12 son AM).
+            4. FECHAS RELATIVAS: "mañana", "el próximo lunes", "hoy", etc., conviértelas a YYYY-MM-DD basándote en que hoy es ${todayStr}.
+            
+            Solo devuelve un objeto JSON puro: {"patientName": string, "date": string, "time": string, "service": string}`,
           },
-          { role: 'user', content: `Chat: ${history}` },
+          { role: 'user', content: `Chat:\n${history}` },
         ],
         temperature: 0,
         response_format: { type: "json_object" }
