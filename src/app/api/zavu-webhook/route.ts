@@ -206,7 +206,7 @@ export async function POST(request: NextRequest) {
 
     if (hasCalendar && finalDateStr) {
       try {
-        availability = await checkAvailability(targetBusiness, finalDateStr, 45);
+        availability = await checkAvailability(targetBusiness, finalDateStr);
       } catch (calErr) {
         console.error('Error Calendar:', calErr);
       }
@@ -335,7 +335,6 @@ export async function POST(request: NextRequest) {
           service: finalService,
           date: finalDate,
           time: finalTime,
-          durationMinutes: 45,
         });
 
         if (eventResult.success) {

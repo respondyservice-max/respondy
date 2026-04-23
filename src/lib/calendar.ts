@@ -65,8 +65,10 @@ export async function getGoogleCalendarClient(business: any) {
 export async function checkAvailability(
   business: any,
   date: string, // YYYY-MM-DD
-  durationMinutes: number = 45
+  durationMinutes?: number
 ): Promise<AvailabilityResult> {
+  const duration = durationMinutes || business.appointment_duration || 45;
+  const leadTimeHours = business.min_lead_time_hours || 0;
 
   const auth = await getGoogleCalendarClient(business);
   const calendar = google.calendar({ version: 'v3', auth });
@@ -154,11 +156,27 @@ export async function checkAvailability(
   const startMins = startH * 60 + startM;
   const endMins = endH * 60 + endM;
 
-  for (let mins = startMins; mins <= endMins - durationMinutes; mins += 30) {
+  const now = new Date();
+  const todayChile = now.toLocaleDateString('en-CA', { timeZone: 'America/Santiago' });
+  const currentMinsChile = now.getHours() * 60 + now.getMinutes() - (now.getTimezoneOffset() === 0 ? 180 : 0); // Ajuste manual si el servidor está en UTC (Chile es UTC-3)
+  
+  // Una forma más robusta de obtener minutos actuales en Chile:
+  const nowChileStr = now.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/Santiago' });
+  const [nowH, nowM] = nowChileStr.split(':').map(Number);
+  const nowMinsChile = nowH * 60 + nowM;
+
+  for (let mins = startMins; mins <= endMins - duration; mins += 30) {
     const slot = `${pad(Math.floor(mins / 60))}:${pad(mins % 60)}`;
-    if (!occupied_times.includes(slot)) {
-      available_slots.push(slot);
+    
+    // 1. Verificar si está ocupado
+    if (occupied_times.includes(slot)) continue;
+    
+    // 2. Verificar anticipación mínima (si es hoy)
+    if (date === todayChile) {
+      if (mins < nowMinsChile + (leadTimeHours * 60)) continue;
     }
+
+    available_slots.push(slot);
   }
 
   // Etiqueta humana de la fecha
@@ -197,15 +215,14 @@ export async function createCalendarEvent(
     const auth = await getGoogleCalendarClient(business);
     const calendar = google.calendar({ version: 'v3', auth });
 
-    const duration = params.durationMinutes || 45;
+    const duration = params.durationMinutes || business.appointment_duration || 45;
+    const srvName = business.service_name || params.service || 'Consulta';
     const startDateTime = new Date(`${params.date}T${params.time}:00`);
-    const endDateTime = new Date(startDateTime.getTime() + duration * 60 * 1000);
-
     const { data: event } = await calendar.events.insert({
       calendarId: business.google_calendar_id || 'primary',
       requestBody: {
-        summary: `${capitalizeFirstLetter(params.service)} - ${params.patientName}`,
-        description: `Paciente: ${params.patientName}\nTeléfono: ${params.patientPhone}\nServicio: ${params.service}`,
+        summary: `${srvName} - ${params.patientName}`,
+        description: `Paciente: ${params.patientName}\nTeléfono: ${params.patientPhone}\nServicio: ${srvName}\n${business.service_description || ''}`,
         start: {
           dateTime: `${params.date}T${params.time}:00`, // NO .000Z so it uses timeZone specified
           timeZone: 'America/Santiago',
