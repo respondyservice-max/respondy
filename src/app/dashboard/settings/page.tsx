@@ -181,6 +181,46 @@ export default function Settings() {
               </div>
             </div>
 
+            {/* Configuración de Comportamiento */}
+            <div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-100">
+              <h2 className="text-xl font-bold mb-6 flex items-center gap-2"><Info className="w-6 h-6 text-blue-600" /> Comportamiento del Agente</h2>
+              <div className="space-y-6">
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-2">Modo de Operación</label>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <button onClick={() => setPromptMode('agendador')} className={`p-4 rounded-xl border-2 text-left transition-all ${promptMode === 'agendador' ? 'border-blue-500 bg-blue-50' : 'border-gray-100 hover:border-gray-200'}`}>
+                      <p className="font-bold text-gray-900">🎯 Modo Agendador</p>
+                      <p className="text-xs text-gray-500 mt-1">Va directo al grano para cerrar la cita lo antes posible.</p>
+                    </button>
+                    <button onClick={() => setPromptMode('conversacional')} className={`p-4 rounded-xl border-2 text-left transition-all ${promptMode === 'conversacional' ? 'border-blue-500 bg-blue-50' : 'border-gray-100 hover:border-gray-200'}`}>
+                      <p className="font-bold text-gray-900">💬 Modo Conversacional</p>
+                      <p className="text-xs text-gray-500 mt-1">Charla más con el paciente antes de pedir los datos.</p>
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex justify-between items-center mb-2">
+                    <label className="block text-sm font-bold text-gray-700">Instrucciones del Agente (Prompt)</label>
+                    <button onClick={() => {
+                      const servicesStr = servicesList.map(s => s.name).filter(Boolean).join(', ');
+                      const personalityMap = { amable: 'Sé siempre muy amable y servicial.', profesional: 'Mantén un tono serio, profesional y eficiente.', divertido: 'Sé divertido, usa muchos emojis y lenguaje cercano.' };
+                      const base = `Eres ${agentName}, la asistente de ${form.name}. ${personalityMap[agentPersonality as keyof typeof personalityMap]} Tus servicios son: ${servicesStr}. Tu objetivo es agendar citas.`;
+                      setForm({ ...form, prompt_custom: base });
+                    }} className="text-xs text-blue-600 font-bold hover:underline">Generar base automática</button>
+                  </div>
+                  <textarea 
+                    value={form.prompt_custom} 
+                    onChange={e => setForm({ ...form, prompt_custom: e.target.value })}
+                    rows={8}
+                    className="w-full px-4 py-3 border rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-mono bg-gray-50"
+                    placeholder="Escribe aquí las reglas que debe seguir tu IA..."
+                  />
+                  <p className="text-xs text-gray-400 mt-2 italic">Tip: Aquí puedes definir promociones, precios o reglas específicas de atención.</p>
+                </div>
+              </div>
+            </div>
+
             {/* Servicios Estructurados */}
             <div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-100">
               <div className="flex justify-between items-center mb-6">
