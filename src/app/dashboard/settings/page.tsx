@@ -102,16 +102,32 @@ export default function Settings() {
   };
 
   const handleGeneratePrompt = () => {
-    let personalityPrompt = agentPersonality === 'formal' ? "Usa un lenguaje formal y profesional." : 
-                           agentPersonality === 'divertido' ? "Sé divertido y usa muchos emojis 😃✨." : 
-                           "Sé amable y servicial.";
+    const personalityMap = {
+      amable: "Tu tono es cálido, empático y servicial. Usa un lenguaje cercano pero respetuoso.",
+      formal: "Tu tono es profesional, ejecutivo y directo. Evita coloquialismos y mantén la elegancia.",
+      divertido: "Eres vibrante, lleno de energía y entusiasmo. Usa emojis estratégicos para transmitir alegría 😃✨."
+    };
 
     const servicesStr = servicesList.map(s => s.name).filter(Boolean).join(', ');
-    const servicesText = servicesStr ? ` Ofrecemos: ${servicesStr}.` : "";
+    const onlineServices = servicesList.filter(s => s.isVideo).map(s => s.name);
     
-    const base = promptMode === 'conversacional' 
-      ? `Eres ${agentName} de ${form.name}. ${personalityPrompt}${servicesText} Charla amigablemente y luego invita a agendar.`
-      : `Eres ${agentName} de ${form.name}. ${personalityPrompt}${servicesText} Tu meta es agendar rápido pidiendo nombre y fecha.`;
+    const base = `
+# PERSONALIDAD Y ROL
+Eres ${agentName}, la asistente experta de ${form.name}. ${personalityMap[agentPersonality as keyof typeof personalityMap]}
+
+# OBJETIVO
+Tu misión es ayudar a los pacientes a resolver dudas y agendar sus citas de manera fluida.
+
+# SERVICIOS
+Ofrecemos los siguientes servicios: ${servicesStr}.
+${onlineServices.length > 0 ? `IMPORTANTE: Contamos con servicios de videollamada para: ${onlineServices.join(', ')}. Menciona esta opción si el paciente busca comodidad desde casa.` : ''}
+
+# REGLAS DE ORO
+1. No confirmes una cita sin tener: Nombre, Servicio, Fecha y Hora.
+2. Si el paciente pregunta por disponibilidad, consulta la lista que te proporcionaré y ofrece opciones claras.
+3. Sé breve en WhatsApp. No escribas párrafos largos.
+4. ${promptMode === 'conversacional' ? 'Prioriza la conexión humana: charla un poco antes de ir directo al grano del agendamiento.' : 'Sé eficiente: guía al paciente al agendamiento lo más rápido posible de forma amable.'}
+    `.trim();
     
     setForm({ ...form, prompt_custom: base });
   };
