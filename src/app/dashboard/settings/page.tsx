@@ -1,10 +1,10 @@
-// app/dashboard/settings/page.tsx - SETTINGS CON SERVICIOS ESTRUCTURADOS
+// app/dashboard/settings/page.tsx - SETTINGS RESTAURADO Y FUNCIONAL
 'use client';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import DashboardNav from '@/components/DashboardNav';
 import { useRouter } from 'next/navigation';
-import { CheckCircle, Loader, ExternalLink, HelpCircle, Info, Plus, Trash2, Video, VideoOff } from 'lucide-react';
+import { CheckCircle, Loader, ExternalLink, HelpCircle, Info, Plus, Trash2, Video, VideoOff, Save, ShieldAlert, Key } from 'lucide-react';
 import type { Business } from '@/types';
 
 interface ServiceItem {
@@ -26,8 +26,13 @@ export default function Settings() {
   const [agentName, setAgentName] = useState('Sofía');
   const [agentPersonality, setAgentPersonality] = useState('amable');
   const [promptMode, setPromptMode] = useState<'agendador' | 'conversacional'>('agendador');
-  const [showHelpModal, setShowHelpModal] = useState(false);
   const [servicesList, setServicesList] = useState<ServiceItem[]>([]);
+  const [blockedNumbers, setBlockedNumbers] = useState<string[]>([]);
+  const [newBlockedNumber, setNewBlockedNumber] = useState('');
+
+  // Zavu Credentials
+  const [zavuApiKey, setZavuApiKey] = useState('');
+  const [zavuSenderId, setZavuSenderId] = useState('');
 
   const [form, setForm] = useState({
     name: '',
@@ -36,19 +41,13 @@ export default function Settings() {
     prompt_custom: '',
   });
 
-  // Cargar datos
   useEffect(() => {
     const fetchBusiness = async () => {
       try {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) { router.push('/auth/login'); return; }
 
-        const { data, error } = await supabase
-          .from('businesses')
-          .select('*')
-          .eq('user_id', user.id)
-          .single();
-
+        const { data, error } = await supabase.from('businesses').select('*').eq('user_id', user.id).single();
         if (error || !data) { router.push('/dashboard'); return; }
 
         setBusiness(data);
@@ -62,26 +61,14 @@ export default function Settings() {
         setZavuConnected(!!data.zavu_api_key_encrypted);
         setSchedulingMode(data.scheduling_mode || 'link');
         setBookingLink(data.booking_link || '');
-        setCalendarConnected(!!data.google_calendar_id);
+        setCalendarConnected(!!data.google_calendar_id || !!data.google_calendar_access_token_encrypted);
 
         const config = data.weekly_schedule?._config || {};
         setAgentName(config.agent_name || 'Sofía');
         setAgentPersonality(config.agent_personality || 'amable');
         setPromptMode(config.prompt_mode || 'agendador');
-
-        // Cargar servicios estructurados o migrar los viejos
-        if (config.services_list) {
-          setServicesList(config.services_list);
-        } else if (data.services && data.services.length > 0) {
-          const migrated = data.services.map((s: string) => ({
-            id: Math.random().toString(36).substring(7),
-            name: s,
-            isVideo: false
-          }));
-          setServicesList(migrated);
-        } else {
-          setServicesList([{ id: '1', name: 'Consulta', isVideo: false }]);
-        }
+        setBlockedNumbers(config.blocked_numbers || []);
+        setServicesList(config.services_list || []);
 
       } catch (error) { console.error(error); }
       finally { setLoading(false); }
@@ -89,47 +76,40 @@ export default function Settings() {
     fetchBusiness();
   }, [router]);
 
-  const addService = () => {
-    setServicesList([...servicesList, { id: Math.random().toString(36).substring(7), name: '', isVideo: false }]);
+  const handleSaveZavu = async () => {
+    if (!zavuApiKey || !zavuSenderId) { alert('Ambos campos son requeridos'); return; }
+    setSaving(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch('/api/business/credentials', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ zavu_api_key: zavuApiKey, zavu_sender_id: zavuSenderId })
+      });
+      if (res.ok) {
+        setZavuConnected(true);
+        setZavuApiKey('');
+        setZavuSenderId('');
+        alert('✅ Conectado a WhatsApp correctamente');
+      } else {
+        const err = await res.json();
+        alert('❌ Error: ' + err.error);
+      }
+    } catch (e) { alert('Error técnico al conectar'); }
+    finally { setSaving(false); }
   };
 
-  const removeService = (id: string) => {
-    setServicesList(servicesList.filter(s => s.id !== id));
-  };
-
-  const updateService = (id: string, updates: Partial<ServiceItem>) => {
-    setServicesList(servicesList.map(s => s.id === id ? { ...s, ...updates } : s));
-  };
-
-  const handleGeneratePrompt = () => {
-    const personalityMap = {
-      amable: "Tu tono es cálido, empático y servicial. Usa un lenguaje cercano pero respetuoso.",
-      formal: "Tu tono es profesional, ejecutivo y directo. Evita coloquialismos y mantén la elegancia.",
-      divertido: "Eres vibrante, lleno de energía y entusiasmo. Usa emojis estratégicos para transmitir alegría 😃✨."
-    };
-
-    const servicesStr = servicesList.map(s => s.name).filter(Boolean).join(', ');
-    const onlineServices = servicesList.filter(s => s.isVideo).map(s => s.name);
-    
-    const base = `
-# PERSONALIDAD Y ROL
-Eres ${agentName}, la asistente experta de ${form.name}. ${personalityMap[agentPersonality as keyof typeof personalityMap]}
-
-# OBJETIVO
-Tu misión es ayudar a los pacientes a resolver dudas y agendar sus citas de manera fluida.
-
-# SERVICIOS
-Ofrecemos los siguientes servicios: ${servicesStr}.
-${onlineServices.length > 0 ? `IMPORTANTE: Contamos con servicios de videollamada para: ${onlineServices.join(', ')}. Menciona esta opción si el paciente busca comodidad desde casa.` : ''}
-
-# REGLAS DE ORO
-1. No confirmes una cita sin tener: Nombre, Servicio, Fecha y Hora.
-2. Si el paciente pregunta por disponibilidad, consulta la lista que te proporcionaré y ofrece opciones claras.
-3. Sé breve en WhatsApp. No escribas párrafos largos.
-4. ${promptMode === 'conversacional' ? 'Prioriza la conexión humana: charla un poco antes de ir directo al grano del agendamiento.' : 'Sé eficiente: guía al paciente al agendamiento lo más rápido posible de forma amable.'}
-    `.trim();
-    
-    setForm({ ...form, prompt_custom: base });
+  const handleDisconnectZavu = async () => {
+    if (!confirm('¿Seguro que quieres desconectar WhatsApp? El bot dejará de funcionar.')) return;
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      await fetch('/api/business/disconnect-zavu', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${session?.access_token}` }
+      });
+      setZavuConnected(false);
+      alert('WhatsApp desconectado');
+    } catch (e) { console.error(e); }
   };
 
   const handleSaveAll = async () => {
@@ -143,7 +123,8 @@ ${onlineServices.length > 0 ? `IMPORTANTE: Contamos con servicios de videollamad
           agent_name: agentName,
           agent_personality: agentPersonality,
           prompt_mode: promptMode,
-          services_list: servicesList
+          services_list: servicesList,
+          blocked_numbers: blockedNumbers
         } 
       };
 
@@ -161,259 +142,162 @@ ${onlineServices.length > 0 ? `IMPORTANTE: Contamos con servicios de videollamad
     finally { setSaving(false); }
   };
 
-  if (loading) return <div className="min-h-screen flex items-center justify-center"><Loader className="animate-spin text-blue-600" /></div>;
+  if (loading) return <div className="min-h-screen bg-gray-50 flex items-center justify-center"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div></div>;
+  if (!business) return null;
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <DashboardNav business={business!} />
+      <DashboardNav business={business} />
       <main className="max-w-4xl mx-auto px-4 py-8">
-        <h1 className="text-3xl font-bold mb-8 text-gray-900">Configuración</h1>
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold text-gray-900">⚙️ Configuración</h1>
+          <p className="text-gray-500 mt-1">Personaliza tu agente IA e integra tus servicios</p>
+        </div>
 
-        <div className="flex gap-1 mb-8 bg-gray-100 p-1 rounded-xl max-w-sm">
-          <button onClick={() => setActiveTab('agente')} className={`flex-1 px-4 py-2 rounded-lg text-sm font-semibold transition-all ${activeTab === 'agente' ? 'bg-white shadow-sm' : 'text-gray-500'}`}>Agente IA</button>
-          <button onClick={() => setActiveTab('integraciones')} className={`flex-1 px-4 py-2 rounded-lg text-sm font-semibold transition-all ${activeTab === 'integraciones' ? 'bg-white shadow-sm' : 'text-gray-500'}`}>Integraciones</button>
+        {/* Tabs */}
+        <div className="flex gap-2 p-1 bg-gray-200 rounded-2xl mb-8 w-fit">
+          <button onClick={() => setActiveTab('agente')} className={`px-6 py-2 rounded-xl text-sm font-bold transition-all ${activeTab === 'agente' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>🤖 Agente IA</button>
+          <button onClick={() => setActiveTab('integraciones')} className={`px-6 py-2 rounded-xl text-sm font-bold transition-all ${activeTab === 'integraciones' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>🔌 Integraciones</button>
         </div>
 
         {activeTab === 'agente' && (
           <div className="space-y-6">
-            {/* Perfil */}
-            <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-              <h2 className="text-lg font-bold mb-6">🤖 Perfil del Agente IA</h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-gray-400 uppercase ml-1">Nombre de la IA</label>
-                  <input type="text" value={agentName} onChange={(e) => setAgentName(e.target.value)} placeholder="Ej: Sofía" className="w-full px-4 py-3 border rounded-xl focus:ring-2 focus:ring-blue-500 transition-all outline-none" />
+            {/* Personalidad del Agente */}
+            <div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-100">
+              <h2 className="text-xl font-bold mb-6 flex items-center gap-2"><CheckCircle className="w-6 h-6 text-blue-600" /> Identidad de {agentName}</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-2">Nombre del Agente</label>
+                  <input type="text" value={agentName} onChange={e => setAgentName(e.target.value)} className="w-full px-4 py-3 border rounded-xl focus:ring-2 focus:ring-blue-500 outline-none" />
                 </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-gray-400 uppercase ml-1">Personalidad</label>
-                  <select value={agentPersonality} onChange={(e) => setAgentPersonality(e.target.value)} className="w-full px-4 py-3 border rounded-xl bg-gray-50 outline-none">
-                    <option value="amable">Amable</option>
-                    <option value="formal">Formal</option>
-                    <option value="divertido">Divertido 😃</option>
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-2">Personalidad</label>
+                  <select value={agentPersonality} onChange={e => setAgentPersonality(e.target.value)} className="w-full px-4 py-3 border rounded-xl focus:ring-2 focus:ring-blue-500 outline-none">
+                    <option value="amable">😊 Amable y servicial</option>
+                    <option value="profesional">💼 Profesional y directo</option>
+                    <option value="divertido">✨ Divertido y con emojis</option>
                   </select>
                 </div>
               </div>
+            </div>
 
-              <div className="space-y-4">
-                <div className="flex justify-between items-center">
-                  <label className="text-xs font-bold text-gray-400 uppercase ml-1">Servicios Ofrecidos</label>
-                  <button onClick={addService} className="text-xs font-bold text-blue-600 flex items-center gap-1 hover:bg-blue-50 px-2 py-1 rounded-lg transition-all"><Plus className="w-3 h-3" /> Añadir Servicio</button>
-                </div>
-                
-                <div className="space-y-2">
-                  {servicesList.map((service) => (
-                    <div key={service.id} className="flex items-center gap-2 bg-gray-50 p-2 rounded-xl border border-gray-100 group">
-                      <input 
-                        type="text" 
-                        value={service.name} 
-                        onChange={(e) => updateService(service.id, { name: e.target.value })}
-                        placeholder="Nombre del servicio"
-                        className="flex-1 bg-transparent px-2 py-1 text-sm outline-none"
-                      />
-                      <button 
-                        onClick={() => updateService(service.id, { isVideo: !service.isVideo })}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${service.isVideo ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-200 text-gray-500'}`}
-                        title={service.isVideo ? "Videollamada habilitada" : "Cita presencial"}
-                      >
-                        {service.isVideo ? <Video className="w-3.5 h-3.5" /> : <VideoOff className="w-3.5 h-3.5" />}
-                        {service.isVideo ? 'Videollamada' : 'Presencial'}
-                      </button>
-                      <button 
-                        onClick={() => removeService(service.id)}
-                        className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all opacity-0 group-hover:opacity-100"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
+            {/* Servicios Estructurados */}
+            <div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-100">
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-xl font-bold flex items-center gap-2"><Plus className="w-6 h-6 text-blue-600" /> Servicios y Precios</h2>
+                <button onClick={() => setServicesList([...servicesList, { id: Math.random().toString(36).substring(7), name: '', isVideo: false }])} className="px-4 py-2 bg-blue-50 text-blue-600 rounded-xl text-sm font-bold hover:bg-blue-100 transition flex items-center gap-2"><Plus className="w-4 h-4" /> Agregar</button>
+              </div>
+              <div className="space-y-3">
+                {servicesList.map((service, idx) => (
+                  <div key={service.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl border border-gray-100 group">
+                    <input type="text" value={service.name} onChange={e => {
+                      const newList = [...servicesList];
+                      newList[idx].name = e.target.value;
+                      setServicesList(newList);
+                    }} placeholder="Nombre del servicio (ej: Limpieza Dental)" className="flex-1 bg-transparent border-none outline-none text-sm font-medium" />
+                    <button onClick={() => {
+                      const newList = [...servicesList];
+                      newList[idx].isVideo = !newList[idx].isVideo;
+                      setServicesList(newList);
+                    }} className={`p-2 rounded-lg transition ${service.isVideo ? 'bg-indigo-100 text-indigo-600' : 'bg-gray-200 text-gray-400'}`} title={service.isVideo ? 'Es videollamada' : 'Es presencial'}>
+                      {service.isVideo ? <Video className="w-4 h-4" /> : <VideoOff className="w-4 h-4" />}
+                    </button>
+                    <button onClick={() => setServicesList(servicesList.filter(s => s.id !== service.id))} className="p-2 text-red-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition"><Trash2 className="w-4 h-4" /></button>
+                  </div>
+                ))}
               </div>
             </div>
 
-            {/* Agendamiento */}
-            <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-              <h2 className="text-lg font-bold mb-4">📅 Modo de Agendamiento</h2>
-              <div className="grid grid-cols-2 gap-3 mb-6">
-                <button onClick={() => setSchedulingMode('link')} className={`p-4 rounded-xl border-2 text-left ${schedulingMode === 'link' ? 'border-blue-600 bg-blue-50' : 'border-gray-100'}`}>
-                  <div className="text-xl mb-1">🔗</div>
-                  <div className="font-bold text-sm">Por Enlace</div>
-                  <div className="text-xs text-gray-500">Comparte tu link</div>
-                </button>
-                <button onClick={() => setSchedulingMode('auto')} className={`p-4 rounded-xl border-2 text-left ${schedulingMode === 'auto' ? 'border-blue-600 bg-blue-50' : 'border-gray-100'}`}>
-                  <div className="text-xl mb-1">⚡</div>
-                  <div className="font-bold text-sm">Automático</div>
-                  <div className="text-xs text-gray-500">IA agenda directo</div>
-                </button>
-              </div>
-
-              <div className="space-y-4">
-                <div className="p-4 bg-blue-50 rounded-xl border border-blue-100">
-                  <p className="text-sm text-blue-800 font-medium flex items-center gap-2 mb-2">
-                    <Info className="w-4 h-4" /> Configura tu disponibilidad en Google
-                  </p>
-                  <button 
-                    onClick={() => setShowHelpModal(true)}
-                    className="text-xs font-bold text-blue-600 underline flex items-center gap-1"
-                  >
-                    ¿Cómo obtener mi link? <HelpCircle className="w-3 h-3" />
-                  </button>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-gray-400 uppercase mb-1 ml-1">Tu Link de Reserva</label>
-                  <input 
-                    type="url" 
-                    value={bookingLink} 
-                    onChange={(e) => setBookingLink(e.target.value)}
-                    placeholder="https://calendar.google.com/calendar/appointments/..."
-                    className="w-full px-4 py-3 border rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Prompt */}
-            <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-lg font-bold">📝 Instrucciones del Agente</h2>
-                <div className="flex gap-1 bg-gray-100 p-1 rounded-lg">
-                  <button onClick={() => setPromptMode('conversacional')} className={`px-3 py-1 rounded-md text-xs font-bold ${promptMode === 'conversacional' ? 'bg-white shadow-sm' : 'text-gray-500'}`}>Conversacional</button>
-                  <button onClick={() => setPromptMode('agendador')} className={`px-3 py-1 rounded-md text-xs font-bold ${promptMode === 'agendador' ? 'bg-white shadow-sm' : 'text-gray-500'}`}>Agendador</button>
-                </div>
-              </div>
-              <button onClick={handleGeneratePrompt} className="w-full py-3 bg-gray-900 text-white rounded-xl text-sm font-bold mb-4 hover:shadow-lg transition-all">✨ Generar Instrucciones Automáticamente</button>
-              <textarea value={form.prompt_custom} onChange={(e) => setForm({...form, prompt_custom: e.target.value})} rows={5} className="w-full px-4 py-3 border rounded-xl text-sm font-mono bg-gray-50 focus:bg-white outline-none transition-all" />
-            </div>
-
-            <button onClick={handleSaveAll} disabled={saving} className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-2xl font-bold text-lg shadow-xl hover:scale-[1.01] transition-all disabled:opacity-50">
-              {saving ? 'Guardando...' : 'Guardar Configuración'}
-            </button>
+            <button onClick={handleSaveAll} disabled={saving} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold hover:bg-blue-700 transition shadow-lg shadow-blue-500/20 flex items-center justify-center gap-2">{saving ? <Loader className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />} Guardar Configuración</button>
           </div>
         )}
 
         {activeTab === 'integraciones' && (
           <div className="space-y-6">
-            <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 flex justify-between items-center">
-              <div>
-                <h2 className="text-lg font-bold">📱 WhatsApp (Zavu)</h2>
-                <p className="text-sm text-gray-500">Conexión con tu número de WhatsApp</p>
-              </div>
-              <div className="flex items-center gap-3">
+            {/* WhatsApp Zavu Section */}
+            <div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-100">
+              <div className="flex justify-between items-start mb-6">
+                <div>
+                  <h2 className="text-xl font-bold flex items-center gap-2"><ExternalLink className="w-6 h-6 text-blue-600" /> WhatsApp (Zavu)</h2>
+                  <p className="text-sm text-gray-500 mt-1">Conecta tu número de WhatsApp para que el bot responda automáticamente.</p>
+                </div>
                 {zavuConnected ? (
-                  <>
-                    <span className="bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-bold">Conectado</span>
-                    <button onClick={() => window.location.href = '/dashboard/setup'} className="text-xs font-bold text-gray-400 hover:text-red-500 underline">Desconectar</button>
-                  </>
+                  <span className="bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-bold">Conectado</span>
                 ) : (
-                  <button onClick={() => window.location.href = '/dashboard/setup'} className="px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 transition-all">Conectar Zavu</button>
+                  <span className="bg-gray-100 text-gray-500 px-3 py-1 rounded-full text-xs font-bold">Sin conexión</span>
                 )}
               </div>
+
+              {!zavuConnected ? (
+                <div className="space-y-4 bg-gray-50 p-6 rounded-2xl border border-dashed border-gray-200">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-gray-400 uppercase mb-2 ml-1">Zavu API Key</label>
+                      <div className="relative">
+                        <Key className="w-4 h-4 absolute left-3 top-3.5 text-gray-400" />
+                        <input type="password" value={zavuApiKey} onChange={e => setZavuApiKey(e.target.value)} placeholder="Tu clave secreta..." className="w-full pl-10 pr-4 py-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500" />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-gray-400 uppercase mb-2 ml-1">Sender ID</label>
+                      <input type="text" value={zavuSenderId} onChange={e => setZavuSenderId(e.target.value)} placeholder="ID de tu número..." className="w-full px-4 py-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500" />
+                    </div>
+                  </div>
+                  <button onClick={handleSaveZavu} disabled={saving} className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition flex items-center justify-center gap-2">{saving ? <Loader className="w-4 h-4 animate-spin" /> : 'Conectar WhatsApp'}</button>
+                </div>
+              ) : (
+                <div className="flex justify-between items-center bg-green-50 p-4 rounded-xl border border-green-100">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center text-green-600"><CheckCircle className="w-6 h-6" /></div>
+                    <div>
+                      <p className="font-bold text-green-900 text-sm">Agente vinculado correctamente</p>
+                      <p className="text-green-700 text-xs">Tus mensajes están siendo procesados por la IA.</p>
+                    </div>
+                  </div>
+                  <button onClick={handleDisconnectZavu} className="text-xs font-bold text-red-400 hover:text-red-600 underline">Desconectar</button>
+                </div>
+              )}
             </div>
-            
-            <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 flex justify-between items-center">
-              <div>
-                <h2 className="text-lg font-bold">📅 Google Calendar</h2>
-                <p className="text-sm text-gray-500">Sincronización de citas y disponibilidad</p>
-              </div>
-              <div className="flex items-center gap-3">
+
+            {/* Google Calendar Section */}
+            <div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-100">
+              <div className="flex justify-between items-start mb-6">
+                <div>
+                  <h2 className="text-xl font-bold flex items-center gap-2">📅 Google Calendar</h2>
+                  <p className="text-sm text-gray-500 mt-1">Sincroniza la disponibilidad y guarda citas automáticamente.</p>
+                </div>
                 {calendarConnected ? (
-                  <>
-                    <span className="bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-bold">Conectado</span>
-                    <button onClick={() => window.location.href = '/api/calendar/authorize'} className="text-xs font-bold text-gray-400 hover:text-red-500 underline">Re-conectar</button>
-                  </>
+                  <span className="bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-bold">Conectado</span>
                 ) : (
-                  <button onClick={() => window.location.href = '/api/calendar/authorize'} className="px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 transition-all">Conectar Google</button>
+                  <span className="bg-gray-100 text-gray-500 px-3 py-1 rounded-full text-xs font-bold">Sin conexión</span>
                 )}
               </div>
+              <button onClick={() => window.location.href = '/api/calendar/authorize'} className={`w-full py-4 rounded-2xl font-bold transition flex items-center justify-center gap-2 ${calendarConnected ? 'bg-gray-100 text-gray-600 hover:bg-gray-200' : 'bg-white border-2 border-gray-200 text-gray-700 hover:border-blue-500 hover:text-blue-600'}`}>
+                {calendarConnected ? '⚙️ Re-sincronizar Calendario' : '🔗 Conectar Google Calendar'}
+              </button>
             </div>
 
-            {/* LISTA NEGRA */}
-            <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-              <h2 className="text-lg font-bold mb-2">🚫 Números Bloqueados (Lista Negra)</h2>
-              <p className="text-xs text-gray-500 mb-4">El bot ignorará automáticamente cualquier mensaje de estos números.</p>
-              
+            {/* Blacklist Section */}
+            <div className="bg-white rounded-2xl p-8 shadow-sm border border-red-50">
+              <h2 className="text-xl font-bold text-red-900 mb-6 flex items-center gap-2"><ShieldAlert className="w-6 h-6 text-red-600" /> Números Bloqueados (Blacklist)</h2>
+              <p className="text-sm text-red-700 mb-4 bg-red-50 p-4 rounded-xl">Los números en esta lista serán ignorados por el bot. Útil para familiares, conocidos o spam.</p>
               <div className="flex gap-2 mb-4">
-                <input 
-                  type="text" 
-                  id="new-blocked-number"
-                  placeholder="Ej: 56912345678" 
-                  className="flex-1 px-4 py-2 border rounded-xl text-sm outline-none focus:ring-2 focus:ring-red-500"
-                />
-                <button 
-                  onClick={() => {
-                    const input = document.getElementById('new-blocked-number') as HTMLInputElement;
-                    if (input.value) {
-                      const updated = { 
-                        ...(business?.weekly_schedule || {}), 
-                        _config: { 
-                          ...(business?.weekly_schedule?._config || {}),
-                          blocked_numbers: [...(business?.weekly_schedule?._config?.blocked_numbers || []), input.value.replace(/\D/g, '')]
-                        } 
-                      };
-                      setBusiness({ ...business!, weekly_schedule: updated });
-                      input.value = '';
-                    }
-                  }}
-                  className="px-4 py-2 bg-red-50 text-red-600 rounded-xl text-sm font-bold border border-red-100 hover:bg-red-100 transition-all"
-                >
-                  Bloquear
-                </button>
+                <input type="text" value={newBlockedNumber} onChange={e => setNewBlockedNumber(e.target.value)} placeholder="Ej: 56912345678" className="flex-1 px-4 py-3 border border-red-100 rounded-xl outline-none focus:ring-2 focus:ring-red-500" />
+                <button onClick={() => { if(!newBlockedNumber) return; setBlockedNumbers([...blockedNumbers, newBlockedNumber.replace('+', '')]); setNewBlockedNumber(''); }} className="px-6 py-3 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition">Bloquear</button>
               </div>
-
               <div className="flex flex-wrap gap-2">
-                {(business?.weekly_schedule?._config?.blocked_numbers || []).map((num: string, idx: number) => (
-                  <div key={idx} className="flex items-center gap-2 bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-200 text-sm">
-                    <span className="font-mono">{num}</span>
-                    <button 
-                      onClick={() => {
-                        const updated = { 
-                          ...(business?.weekly_schedule || {}), 
-                          _config: { 
-                            ...(business?.weekly_schedule?._config || {}),
-                            blocked_numbers: business?.weekly_schedule?._config?.blocked_numbers.filter((n: string) => n !== num)
-                          } 
-                        };
-                        setBusiness({ ...business!, weekly_schedule: updated });
-                      }}
-                      className="text-gray-400 hover:text-red-500"
-                    >
-                      &times;
-                    </button>
+                {blockedNumbers.map(num => (
+                  <div key={num} className="flex items-center gap-2 px-3 py-1.5 bg-red-50 text-red-700 rounded-full text-sm font-bold border border-red-100">
+                    {num} <button onClick={() => setBlockedNumbers(blockedNumbers.filter(n => n !== num))} className="text-red-400 hover:text-red-600"><Trash2 className="w-3.5 h-3.5" /></button>
                   </div>
                 ))}
-                {(!business?.weekly_schedule?._config?.blocked_numbers || business?.weekly_schedule?._config?.blocked_numbers.length === 0) && (
-                  <p className="text-xs text-gray-400 italic">No hay números bloqueados.</p>
-                )}
               </div>
             </div>
 
-            <button onClick={handleSaveAll} disabled={saving} className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-2xl font-bold text-lg shadow-xl hover:scale-[1.01] transition-all disabled:opacity-50">
-              {saving ? 'Guardando...' : 'Guardar Configuración'}
-            </button>
+            <button onClick={handleSaveAll} disabled={saving} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold hover:bg-blue-700 transition shadow-lg shadow-blue-500/20 flex items-center justify-center gap-2">{saving ? <Loader className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />} Guardar Todo</button>
           </div>
         )}
       </main>
-
-      {/* MODAL DE AYUDA */}
-      {showHelpModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-8 shadow-2xl relative">
-            <button onClick={() => setShowHelpModal(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 text-2xl font-bold">&times;</button>
-            <h3 className="text-xl font-bold mb-4 text-gray-900">Configura tu Agendamiento</h3>
-            <ol className="space-y-4 text-sm text-gray-600 mb-6">
-              <li>1. Ve a <a href="https://calendar.google.com/" target="_blank" className="text-blue-600 font-bold underline">Google Calendar</a>.</li>
-              <li>2. Busca el botón <strong>"+"</strong> al lado de <strong>"Páginas de reserva"</strong>:</li>
-              <div className="bg-gray-50 p-4 rounded-xl flex justify-center border border-gray-100">
-                <img src="/images/google-help.png" alt="Instrucción Google" className="max-h-12" />
-                <div className="flex items-center gap-2 text-gray-800 font-medium">Páginas de reserva <span className="text-xl">+</span></div>
-              </div>
-              <li>3. Configura tus horarios y guarda.</li>
-              <li>4. Haz clic en <strong>"Compartir"</strong>, copia el enlace y pégalo en Respondy.</li>
-            </ol>
-            <button onClick={() => setShowHelpModal(false)} className="w-full py-3 bg-gray-900 text-white rounded-xl font-bold">Entendido</button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
