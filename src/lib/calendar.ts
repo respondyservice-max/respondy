@@ -160,7 +160,7 @@ export async function checkAvailability(
   const now = new Date();
   const todayChile = now.toLocaleDateString('en-CA', { timeZone: 'America/Santiago' });
   const currentMinsChile = now.getHours() * 60 + now.getMinutes() - (now.getTimezoneOffset() === 0 ? 180 : 0); // Ajuste manual si el servidor está en UTC (Chile es UTC-3)
-  
+
   // Una forma más robusta de obtener minutos actuales en Chile:
   const nowChileStr = now.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/Santiago' });
   const [nowH, nowM] = nowChileStr.split(':').map(Number);
@@ -168,10 +168,10 @@ export async function checkAvailability(
 
   for (let mins = startMins; mins <= endMins - duration; mins += 30) {
     const slot = `${pad(Math.floor(mins / 60))}:${pad(mins % 60)}`;
-    
+
     // 1. Verificar si está ocupado
     if (occupied_times.includes(slot)) continue;
-    
+
     // 2. Verificar anticipación mínima (si es hoy)
     if (date === todayChile) {
       if (mins < nowMinsChile + (leadTimeHours * 60)) continue;
@@ -208,9 +208,9 @@ export async function createCalendarEvent(
     service: string;
     date: string;   // YYYY-MM-DD
     time: string;   // HH:MM
-    durationMinutes?: number;
+    includeVideoCall?: boolean;
   }
-): Promise<{ success: boolean; eventId?: string; eventLink?: string; error?: string }> {
+): Promise<{ success: boolean; eventId?: string; eventLink?: string; meetLink?: string; error?: string }> {
   try {
     const auth = await getGoogleCalendarClient(business);
     const calendar = google.calendar({ version: 'v3', auth });
@@ -222,15 +222,15 @@ export async function createCalendarEvent(
     const startDateTime = new Date(`${params.date}T${params.time}:00`);
     const { data: event } = await calendar.events.insert({
       calendarId: business.google_calendar_id || 'primary',
+      conferenceDataVersion: 1,
       requestBody: {
         summary: `${srvName} - ${params.patientName}`,
         description: `Paciente: ${params.patientName}\nTeléfono: ${params.patientPhone}\nServicio: ${srvName}\n${srvDesc}`,
         start: {
-          dateTime: `${params.date}T${params.time}:00`, // NO .000Z so it uses timeZone specified
+          dateTime: `${params.date}T${params.time}:00`,
           timeZone: 'America/Santiago',
         },
         end: {
-          // calculate end time correctly
           dateTime: (() => {
             const dateObj = new Date(`${params.date}T${params.time}:00`);
             dateObj.setMinutes(dateObj.getMinutes() + duration);
@@ -239,6 +239,14 @@ export async function createCalendarEvent(
           })(),
           timeZone: 'America/Santiago',
         },
+        ...(params.includeVideoCall ? {
+          conferenceData: {
+            createRequest: {
+              requestId: Math.random().toString(36).substring(7),
+              conferenceSolutionKey: { type: 'hangoutsMeet' },
+            },
+          },
+        } : {}),
       },
     });
 
@@ -323,9 +331,9 @@ export async function parseClientMessage(history: string): Promise<{
 
   try {
     const today = new Date();
-    const todayStr = today.toLocaleDateString('es-CL', { 
+    const todayStr = today.toLocaleDateString('es-CL', {
       weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
-      timeZone: 'America/Santiago' 
+      timeZone: 'America/Santiago'
     });
     const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
@@ -360,7 +368,7 @@ export async function parseClientMessage(history: string): Promise<{
 
     const data = await res.json();
     const result = JSON.parse(data.choices?.[0]?.message?.content || '{}');
-    
+
     return {
       patientName: result.patientName || null,
       date: result.date || null,
@@ -396,10 +404,10 @@ export function createDynamicPrompt(
   const cleanRequestedTime = requestedSlot?.time?.trim();
   const isSlotFree = cleanRequestedTime && availableSlots.includes(cleanRequestedTime);
   const allDataReady = hasName && hasDate && hasTime && isSlotFree;
-  
+
   // Si no hay fecha, no podemos decir "Sin cupos", debemos pedir la fecha.
   const availableText = !hasDate ? 'Pendiente determinar fecha' : (availableSlots.length > 0 ? availableSlots.join(', ') : 'Sin cupos para este día');
-  
+
   const statusMemo = `
 ### MEMORIA INTERNA - NO REPETIR ###
 - PACIENTE: ${collectedData?.name || 'DESCONOCIDO'}
@@ -426,7 +434,7 @@ export function createDynamicPrompt(
 
   const config = business.weekly_schedule?._config || {};
   const isConversational = config.prompt_mode === 'conversacional';
-  
+
   return `
 ${business.prompt_custom || 'Eres el asistente de Clínica Smile.'}
 ${statusMemo}

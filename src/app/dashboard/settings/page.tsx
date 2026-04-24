@@ -1,11 +1,17 @@
-// app/dashboard/settings/page.tsx - SETTINGS SIMPLIFICADO FINAL
+// app/dashboard/settings/page.tsx - SETTINGS CON SERVICIOS ESTRUCTURADOS
 'use client';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import DashboardNav from '@/components/DashboardNav';
 import { useRouter } from 'next/navigation';
-import { CheckCircle, Loader, ExternalLink, HelpCircle, Info } from 'lucide-react';
+import { CheckCircle, Loader, ExternalLink, HelpCircle, Info, Plus, Trash2, Video, VideoOff } from 'lucide-react';
 import type { Business } from '@/types';
+
+interface ServiceItem {
+  id: string;
+  name: string;
+  isVideo: boolean;
+}
 
 export default function Settings() {
   const router = useRouter();
@@ -21,12 +27,12 @@ export default function Settings() {
   const [agentPersonality, setAgentPersonality] = useState('amable');
   const [promptMode, setPromptMode] = useState<'agendador' | 'conversacional'>('agendador');
   const [showHelpModal, setShowHelpModal] = useState(false);
+  const [servicesList, setServicesList] = useState<ServiceItem[]>([]);
 
   const [form, setForm] = useState({
     name: '',
     business_type: '',
     location: '',
-    services: '',
     prompt_custom: '',
   });
 
@@ -50,7 +56,6 @@ export default function Settings() {
           name: data.name || '',
           business_type: data.business_type || '',
           location: data.location || '',
-          services: data.services?.join(', ') || '',
           prompt_custom: data.prompt_custom || '',
         });
         
@@ -64,21 +69,49 @@ export default function Settings() {
         setAgentPersonality(config.agent_personality || 'amable');
         setPromptMode(config.prompt_mode || 'agendador');
 
+        // Cargar servicios estructurados o migrar los viejos
+        if (config.services_list) {
+          setServicesList(config.services_list);
+        } else if (data.services && data.services.length > 0) {
+          const migrated = data.services.map((s: string) => ({
+            id: Math.random().toString(36).substring(7),
+            name: s,
+            isVideo: false
+          }));
+          setServicesList(migrated);
+        } else {
+          setServicesList([{ id: '1', name: 'Consulta', isVideo: false }]);
+        }
+
       } catch (error) { console.error(error); }
       finally { setLoading(false); }
     };
     fetchBusiness();
   }, [router]);
 
+  const addService = () => {
+    setServicesList([...servicesList, { id: Math.random().toString(36).substring(7), name: '', isVideo: false }]);
+  };
+
+  const removeService = (id: string) => {
+    setServicesList(servicesList.filter(s => s.id !== id));
+  };
+
+  const updateService = (id: string, updates: Partial<ServiceItem>) => {
+    setServicesList(servicesList.map(s => s.id === id ? { ...s, ...updates } : s));
+  };
+
   const handleGeneratePrompt = () => {
     let personalityPrompt = agentPersonality === 'formal' ? "Usa un lenguaje formal y profesional." : 
                            agentPersonality === 'divertido' ? "Sé divertido y usa muchos emojis 😃✨." : 
                            "Sé amable y servicial.";
 
-    const servicesStr = form.services ? ` Ofrecemos: ${form.services}.` : "";
+    const servicesStr = servicesList.map(s => s.name).filter(Boolean).join(', ');
+    const servicesText = servicesStr ? ` Ofrecemos: ${servicesStr}.` : "";
+    
     const base = promptMode === 'conversacional' 
-      ? `Eres ${agentName} de ${form.name}. ${personalityPrompt}${servicesStr} Charla amigablemente y luego invita a agendar.`
-      : `Eres ${agentName} de ${form.name}. ${personalityPrompt}${servicesStr} Tu meta es agendar rápido pidiendo nombre y fecha.`;
+      ? `Eres ${agentName} de ${form.name}. ${personalityPrompt}${servicesText} Charla amigablemente y luego invita a agendar.`
+      : `Eres ${agentName} de ${form.name}. ${personalityPrompt}${servicesText} Tu meta es agendar rápido pidiendo nombre y fecha.`;
     
     setForm({ ...form, prompt_custom: base });
   };
@@ -93,13 +126,14 @@ export default function Settings() {
           ...(business?.weekly_schedule?._config || {}),
           agent_name: agentName,
           agent_personality: agentPersonality,
-          prompt_mode: promptMode
+          prompt_mode: promptMode,
+          services_list: servicesList
         } 
       };
 
       await supabase.from('businesses').update({ 
         name: form.name,
-        services: form.services.split(',').map(s => s.trim()).filter(Boolean),
+        services: servicesList.map(s => s.name).filter(Boolean),
         prompt_custom: form.prompt_custom,
         scheduling_mode: schedulingMode,
         booking_link: bookingLink,
@@ -129,14 +163,54 @@ export default function Settings() {
             {/* Perfil */}
             <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
               <h2 className="text-lg font-bold mb-6">🤖 Perfil del Agente IA</h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <input type="text" value={agentName} onChange={(e) => setAgentName(e.target.value)} placeholder="Nombre del Agente" className="px-4 py-3 border rounded-xl" />
-                <select value={agentPersonality} onChange={(e) => setAgentPersonality(e.target.value)} className="px-4 py-3 border rounded-xl bg-gray-50">
-                  <option value="amable">Amable</option>
-                  <option value="formal">Formal</option>
-                  <option value="divertido">Divertido 😃</option>
-                </select>
-                <textarea value={form.services} onChange={(e) => setForm({...form, services: e.target.value})} placeholder="Servicios (ej: Corte, Color)" className="md:col-span-2 px-4 py-3 border rounded-xl" rows={2} />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-gray-400 uppercase ml-1">Nombre de la IA</label>
+                  <input type="text" value={agentName} onChange={(e) => setAgentName(e.target.value)} placeholder="Ej: Sofía" className="w-full px-4 py-3 border rounded-xl focus:ring-2 focus:ring-blue-500 transition-all outline-none" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-gray-400 uppercase ml-1">Personalidad</label>
+                  <select value={agentPersonality} onChange={(e) => setAgentPersonality(e.target.value)} className="w-full px-4 py-3 border rounded-xl bg-gray-50 outline-none">
+                    <option value="amable">Amable</option>
+                    <option value="formal">Formal</option>
+                    <option value="divertido">Divertido 😃</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                  <label className="text-xs font-bold text-gray-400 uppercase ml-1">Servicios Ofrecidos</label>
+                  <button onClick={addService} className="text-xs font-bold text-blue-600 flex items-center gap-1 hover:bg-blue-50 px-2 py-1 rounded-lg transition-all"><Plus className="w-3 h-3" /> Añadir Servicio</button>
+                </div>
+                
+                <div className="space-y-2">
+                  {servicesList.map((service) => (
+                    <div key={service.id} className="flex items-center gap-2 bg-gray-50 p-2 rounded-xl border border-gray-100 group">
+                      <input 
+                        type="text" 
+                        value={service.name} 
+                        onChange={(e) => updateService(service.id, { name: e.target.value })}
+                        placeholder="Nombre del servicio"
+                        className="flex-1 bg-transparent px-2 py-1 text-sm outline-none"
+                      />
+                      <button 
+                        onClick={() => updateService(service.id, { isVideo: !service.isVideo })}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${service.isVideo ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-200 text-gray-500'}`}
+                        title={service.isVideo ? "Videollamada habilitada" : "Cita presencial"}
+                      >
+                        {service.isVideo ? <Video className="w-3.5 h-3.5" /> : <VideoOff className="w-3.5 h-3.5" />}
+                        {service.isVideo ? 'Videollamada' : 'Presencial'}
+                      </button>
+                      <button 
+                        onClick={() => removeService(service.id)}
+                        className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
 
@@ -161,9 +235,6 @@ export default function Settings() {
                   <p className="text-sm text-blue-800 font-medium flex items-center gap-2 mb-2">
                     <Info className="w-4 h-4" /> Configura tu disponibilidad en Google
                   </p>
-                  <p className="text-xs text-blue-700 mb-3">
-                    Crea tu "Página de citas" en Google Calendar y pega el enlace aquí abajo.
-                  </p>
                   <button 
                     onClick={() => setShowHelpModal(true)}
                     className="text-xs font-bold text-blue-600 underline flex items-center gap-1"
@@ -173,13 +244,13 @@ export default function Settings() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-gray-500 mb-1">TU LINK DE RESERVA DE GOOGLE</label>
+                  <label className="block text-xs font-bold text-gray-400 uppercase mb-1 ml-1">Tu Link de Reserva</label>
                   <input 
                     type="url" 
                     value={bookingLink} 
                     onChange={(e) => setBookingLink(e.target.value)}
                     placeholder="https://calendar.google.com/calendar/appointments/..."
-                    className="w-full px-4 py-3 border rounded-xl text-sm"
+                    className="w-full px-4 py-3 border rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"
                   />
                 </div>
               </div>
@@ -188,17 +259,17 @@ export default function Settings() {
             {/* Prompt */}
             <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
               <div className="flex justify-between items-center mb-4">
-                <h2 className="text-lg font-bold">📝 Instrucciones</h2>
+                <h2 className="text-lg font-bold">📝 Instrucciones del Agente</h2>
                 <div className="flex gap-1 bg-gray-100 p-1 rounded-lg">
                   <button onClick={() => setPromptMode('conversacional')} className={`px-3 py-1 rounded-md text-xs font-bold ${promptMode === 'conversacional' ? 'bg-white shadow-sm' : 'text-gray-500'}`}>Conversacional</button>
                   <button onClick={() => setPromptMode('agendador')} className={`px-3 py-1 rounded-md text-xs font-bold ${promptMode === 'agendador' ? 'bg-white shadow-sm' : 'text-gray-500'}`}>Agendador</button>
                 </div>
               </div>
-              <button onClick={handleGeneratePrompt} className="w-full py-2 bg-gray-900 text-white rounded-xl text-sm font-bold mb-4">✨ Generar Instrucciones Automáticamente</button>
-              <textarea value={form.prompt_custom} onChange={(e) => setForm({...form, prompt_custom: e.target.value})} rows={5} className="w-full px-4 py-3 border rounded-xl text-sm font-mono bg-gray-50" />
+              <button onClick={handleGeneratePrompt} className="w-full py-3 bg-gray-900 text-white rounded-xl text-sm font-bold mb-4 hover:shadow-lg transition-all">✨ Generar Instrucciones Automáticamente</button>
+              <textarea value={form.prompt_custom} onChange={(e) => setForm({...form, prompt_custom: e.target.value})} rows={5} className="w-full px-4 py-3 border rounded-xl text-sm font-mono bg-gray-50 focus:bg-white outline-none transition-all" />
             </div>
 
-            <button onClick={handleSaveAll} disabled={saving} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold text-lg shadow-lg">
+            <button onClick={handleSaveAll} disabled={saving} className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-2xl font-bold text-lg shadow-xl hover:scale-[1.01] transition-all disabled:opacity-50">
               {saving ? 'Guardando...' : 'Guardar Configuración'}
             </button>
           </div>
@@ -206,13 +277,19 @@ export default function Settings() {
 
         {activeTab === 'integraciones' && (
           <div className="space-y-6">
-            <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-              <h2 className="text-lg font-bold mb-4">📱 WhatsApp (Zavu)</h2>
-              {zavuConnected ? <p className="text-green-600 font-bold">✓ Conectado</p> : <p className="text-gray-400">No conectado</p>}
+            <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 flex justify-between items-center">
+              <div>
+                <h2 className="text-lg font-bold">📱 WhatsApp (Zavu)</h2>
+                <p className="text-sm text-gray-500">Conexión con tu número de WhatsApp</p>
+              </div>
+              {zavuConnected ? <span className="bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-bold">Conectado</span> : <span className="bg-gray-100 text-gray-500 px-3 py-1 rounded-full text-xs font-bold">No conectado</span>}
             </div>
-            <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-              <h2 className="text-lg font-bold mb-4">📅 Google Calendar</h2>
-              {calendarConnected ? <p className="text-green-600 font-bold">✓ Conectado</p> : <p className="text-gray-400">No conectado</p>}
+            <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 flex justify-between items-center">
+              <div>
+                <h2 className="text-lg font-bold">📅 Google Calendar</h2>
+                <p className="text-sm text-gray-500">Sincronización de citas y disponibilidad</p>
+              </div>
+              {calendarConnected ? <span className="bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-bold">Conectado</span> : <span className="bg-gray-100 text-gray-500 px-3 py-1 rounded-full text-xs font-bold">No conectado</span>}
             </div>
           </div>
         )}
@@ -229,7 +306,6 @@ export default function Settings() {
               <li>2. Busca el botón <strong>"+"</strong> al lado de <strong>"Páginas de reserva"</strong>:</li>
               <div className="bg-gray-50 p-4 rounded-xl flex justify-center border border-gray-100">
                 <img src="/images/google-help.png" alt="Instrucción Google" className="max-h-12" />
-                {/* Fallback si no hay imagen: */}
                 <div className="flex items-center gap-2 text-gray-800 font-medium">Páginas de reserva <span className="text-xl">+</span></div>
               </div>
               <li>3. Configura tus horarios y guarda.</li>

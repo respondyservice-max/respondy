@@ -66,7 +66,7 @@ export async function POST(request: NextRequest) {
       });
       const linkData = await linkGroqRes.json();
       const linkBotResponse = linkData.choices?.[0]?.message?.content || `Agendar aquí: ${targetBusiness.booking_link}`;
-      
+
       await fetch('https://api.zavu.dev/v1/messages', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${zavuApiKey}`, 'Content-Type': 'application/json' },
@@ -87,10 +87,10 @@ export async function POST(request: NextRequest) {
 
     const historyText = (previousMessages || []).reverse()
       .map(m => `${m.message_type === 'incoming' ? 'Usuario' : 'Asistente'}: ${m.message_text}`).join('\n');
-    
+
     // ── 3. Parsear datos con IA ──
     const parsed = await parseClientMessage(`${historyText}\nUsuario: ${messageText}`);
-    
+
     // ── 3.1 Memoria de Borradores (15 mins) ──
     const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
     let { data: sessionData } = await supabaseAdmin
@@ -151,19 +151,51 @@ export async function POST(request: NextRequest) {
     const reag = await extractReschedule(botResponse);
 
     if (reag && upcoming) {
-        const a = upcoming.find(x => x.id === reag.id);
-        if (a && reag.date && reag.time) {
-            if (a.google_event_id) await updateCalendarEvent(targetBusiness, a.google_event_id, reag.date, reag.time);
-            await supabaseAdmin.from('appointments').update({ date_time: new Date(`${reag.date}T${reag.time}:00`).toISOString() }).eq('id', a.id);
-        }
+      const a = upcoming.find(x => x.id === reag.id);
+      if (a && reag.date && reag.time) {
+        if (a.google_event_id) await updateCalendarEvent(targetBusiness, a.google_event_id, reag.date, reag.time);
+        await supabaseAdmin.from('appointments').update({ date_time: new Date(`${reag.date}T${reag.time}:00`).toISOString() }).eq('id', a.id);
+      }
     } else if (canc && upcoming) {
-        const a = upcoming.find(x => x.id === canc);
-        if (a && a.google_event_id) await deleteCalendarEvent(targetBusiness, a.google_event_id);
-        if (a) await supabaseAdmin.from('appointments').delete().eq('id', a.id);
+      const a = upcoming.find(x => x.id === canc);
+      if (a && a.google_event_id) await deleteCalendarEvent(targetBusiness, a.google_event_id);
+      if (a) await supabaseAdmin.from('appointments').delete().eq('id', a.id);
     } else if (conf) {
-        let fD = finalDateStr, fT = finalTimeStr, fN = finalName;
-        if (!fD || !fT || !fN) { const bP = await parseClientMessage(botResponse); fD = fD || bP.date; fT = fT || bP.time; fN = fN || bP.patientName; }
-        if (fD && fT && fN) await createCalendarEvent(targetBusiness, { patientName: fN, patientPhone: normalizedPhone, service: parsed.service || 'Consulta', date: fD, time: fT });
+      let fD = finalDateStr, fT = finalTimeStr, fN = finalName;
+      if (!fD || !fT || !fN) { 
+        const bP = await parseClientMessage(botResponse); 
+        fD = fD || bP.date; fT = fT || bP.time; fN = fN || bP.patientName; 
+      }
+      
+      if (fD && fT && fN) {
+        // Buscar si el servicio es videollamada
+        const config = targetBusiness.weekly_schedule?._config || {};
+        const servicesList = config.services_list || [];
+        const serviceData = servicesList.find((s: any) => 
+          s.name.toLowerCase().includes((parsed.service || '').toLowerCase()) ||
+          (parsed.service || '').toLowerCase().includes(s.name.toLowerCase())
+        );
+        const isVideo = serviceData?.isVideo || false;
+
+        const eventRes = await createCalendarEvent(targetBusiness, { 
+          patientName: fN, 
+          patientPhone: normalizedPhone, 
+          service: parsed.service || 'Consulta', 
+          date: fD, 
+          time: fT,
+          includeVideoCall: isVideo
+        });
+
+        if (eventRes.success) {
+          const ticketMsg = `🎫 *TICKET DE RESERVA*\n\n✅ *Confirmado:* ${fN}\n📅 *Día:* ${fD}\n⏰ *Hora:* ${fT}${eventRes.meetLink ? `\n🎥 *Videollamada:* ${eventRes.meetLink}` : '\n📍 *Lugar:* Presencial'}\n\n¡Te esperamos!`;
+          await fetch('https://api.zavu.dev/v1/messages', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${zavuApiKey}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ senderId: senderIdFromZavu, to: phoneFrom, text: ticketMsg }),
+          });
+          await supabaseAdmin.from('conversations').insert({ business_id: targetBusiness.id, phone_from: normalizedPhone, message_type: 'outgoing', message_text: ticketMsg });
+        }
+      }
     }
 
     // ── 7. Enviar a Zavu y guardar ──
