@@ -1,5 +1,5 @@
 export const dynamic = "force-dynamic";
-// app/api/zavu-webhook/route.ts - VERSIÓN FINAL ESTABILIZADA CON SERVICIOS DINÁMICOS
+// app/api/zavu-webhook/route.ts - VERSIÓN FINAL CON CORREO OBLIGATORIO Y TICKET MEJORADO
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { decrypt } from '@/lib/crypto';
@@ -70,11 +70,10 @@ export async function POST(request: NextRequest) {
 
     let sessionAppt = sessionData?.[0];
 
-    // Si el usuario saluda de cero, podríamos querer ignorar el borrador viejo si es de otra persona
-    // Pero por ahora, priorizaremos el parseo fresco
-    if (parsed.patientName || parsed.date || parsed.time || parsed.service) {
+    if (parsed.patientName || parsed.date || parsed.time || parsed.service || parsed.patientEmail) {
       const updateData: any = {};
       if (parsed.patientName) updateData.patient_name = parsed.patientName;
+      if (parsed.patientEmail) updateData.patient_email = parsed.patientEmail;
       if (parsed.service) updateData.service = parsed.service;
       
       let fDate = parsed.date || (sessionAppt?.date_time ? sessionAppt.date_time.split('T')[0] : null);
@@ -88,6 +87,7 @@ export async function POST(request: NextRequest) {
         const { data: i } = await supabaseAdmin.from('appointments').insert({
           business_id: targetBusiness.id, patient_phone: normalizedPhone,
           patient_name: parsed.patientName || 'Paciente', status: 'draft',
+          patient_email: parsed.patientEmail || null,
           service: parsed.service || null,
           date_time: (fDate && fTime) ? new Date(`${fDate}T${fTime}:00`).toISOString() : null
         }).select();
@@ -96,6 +96,7 @@ export async function POST(request: NextRequest) {
     }
 
     const finalName = parsed.patientName || sessionAppt?.patient_name || null;
+    const finalEmail = parsed.patientEmail || sessionAppt?.patient_email || null;
     const finalDateStr = parsed.date || (sessionAppt?.date_time ? sessionAppt.date_time.split('T')[0] : null);
     const finalTimeStr = parsed.time || (sessionAppt?.date_time ? sessionAppt.date_time.split('T')[1].substring(0, 5) : null);
     const finalService = parsed.service || sessionAppt?.service || null;
@@ -108,7 +109,7 @@ export async function POST(request: NextRequest) {
 
     const { data: upcoming } = await supabaseAdmin.from('appointments').select('*').eq('business_id', targetBusiness.id).gte('date_time', new Date().toISOString()).ilike('patient_phone', `%${normalizedPhone}%`);
 
-    const dynamicPrompt = createDynamicPrompt(targetBusiness, availability, (finalDateStr && finalTimeStr) ? { date: finalDateStr, time: finalTimeStr } : null, upcoming || [], { name: finalName, date: finalDateStr, time: finalTimeStr, service: finalService });
+    const dynamicPrompt = createDynamicPrompt(targetBusiness, availability, (finalDateStr && finalTimeStr) ? { date: finalDateStr, time: finalTimeStr } : null, upcoming || [], { name: finalName, email: finalEmail, date: finalDateStr, time: finalTimeStr, service: finalService });
     
     const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
@@ -138,13 +139,13 @@ export async function POST(request: NextRequest) {
       if (a && a.google_event_id) await deleteCalendarEvent(targetBusiness, a.google_event_id);
       if (a) await supabaseAdmin.from('appointments').delete().eq('id', a.id);
     } else if (conf) {
-      let fD = finalDateStr, fT = finalTimeStr, fN = finalName, fS = finalService;
-      if (!fD || !fT || !fN || !fS) { 
+      let fD = finalDateStr, fT = finalTimeStr, fN = finalName, fS = finalService, fE = finalEmail;
+      if (!fD || !fT || !fN || !fS || !fE) { 
         const bP = await parseClientMessage(botResponse); 
-        fD = fD || bP.date; fT = fT || bP.time; fN = fN || bP.patientName; fS = fS || bP.service;
+        fD = fD || bP.date; fT = fT || bP.time; fN = fN || bP.patientName; fS = fS || bP.service; fE = fE || bP.patientEmail;
       }
       
-      if (fD && fT && fN) {
+      if (fD && fT && fN && fE) {
         const config = targetBusiness.weekly_schedule?._config || {};
         const sList = config.services_list || [];
         const sData = sList.find((s: any) => 
@@ -155,11 +156,11 @@ export async function POST(request: NextRequest) {
         const isVideo = sData?.isVideo || false;
 
         const eventRes = await createCalendarEvent(targetBusiness, { 
-          patientName: fN, patientPhone: normalizedPhone, service: sData?.name || fS || 'Consulta', date: fD, time: fT, includeVideoCall: isVideo
+          patientName: fN, patientPhone: normalizedPhone, patientEmail: fE, service: sData?.name || fS || 'Consulta', date: fD, time: fT, includeVideoCall: isVideo
         });
 
         if (eventRes.success) {
-          const ticketMsg = `🎫 *TICKET DE RESERVA*\n\n✅ *Confirmado:* ${fN}\n📝 *Servicio:* ${sData?.name || fS || 'Consulta'}\n📅 *Día:* ${fD}\n⏰ *Hora:* ${fT}${eventRes.meetLink ? `\n🎥 *Videollamada:* ${eventRes.meetLink}` : '\n📍 *Lugar:* Presencial'}\n\n¡Te esperamos!`;
+          const ticketMsg = `🎫 *TICKET DE RESERVA*\n\n✅ *Confirmado:* ${fN}\n📧 *Email:* ${fE}\n📝 *Servicio:* ${sData?.name || fS || 'Consulta'}\n📅 *Día:* ${fD}\n⏰ *Hora:* ${fT}${eventRes.meetLink ? `\n🎥 *Videollamada:* ${eventRes.meetLink}` : '\n📍 *Lugar:* Presencial'}\n\n¡Te esperamos!`;
           await fetch('https://api.zavu.dev/v1/messages', {
             method: 'POST',
             headers: { 'Authorization': `Bearer ${zavuApiKey}`, 'Content-Type': 'application/json' },

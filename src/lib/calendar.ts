@@ -205,6 +205,7 @@ export async function createCalendarEvent(
   params: {
     patientName: string;
     patientPhone: string;
+    patientEmail?: string;
     service: string;
     date: string;   // YYYY-MM-DD
     time: string;   // HH:MM
@@ -239,6 +240,9 @@ export async function createCalendarEvent(
           })(),
           timeZone: 'America/Santiago',
         },
+        ...(params.patientEmail ? {
+          attendees: [{ email: params.patientEmail }],
+        } : {}),
         ...(params.includeVideoCall ? {
           conferenceData: {
             createRequest: {
@@ -250,14 +254,18 @@ export async function createCalendarEvent(
       },
     });
 
+    const meetLink = event.conferenceData?.entryPoints?.find(ep => ep.entryPointType === 'video')?.uri || null;
+
     // Guardar en tabla appointments
     await supabaseAdmin.from('appointments').insert({
       business_id: business.id,
       patient_name: params.patientName,
       patient_phone: params.patientPhone,
+      patient_email: params.patientEmail || null,
       service: params.service,
       date_time: startDateTime.toISOString(),
       google_event_id: event.id,
+      meet_link: meetLink,
       status: 'confirmed',
     });
 
@@ -265,6 +273,7 @@ export async function createCalendarEvent(
       success: true,
       eventId: event.id || undefined,
       eventLink: event.htmlLink || undefined,
+      meetLink: meetLink || undefined,
     };
   } catch (error) {
     console.error('Error insertando evento en Google Calendar:', error);
@@ -371,12 +380,13 @@ export async function parseClientMessage(history: string): Promise<{
 
     return {
       patientName: result.patientName || null,
+      patientEmail: result.patientEmail || null,
       date: result.date || null,
       time: result.time || null,
       service: result.service || null
     };
   } catch (e) {
-    return { date: null, time: null, patientName: null, service: null };
+    return { date: null, time: null, patientName: null, patientEmail: null, service: null };
   }
 }
 
@@ -387,7 +397,7 @@ export function createDynamicPrompt(
   availability: AvailabilityResult | null,
   requestedSlot: { date: string; time: string | null } | null,
   upcomingAppointments: any[] = [],
-  collectedData?: { name?: string | null; date?: string | null; time?: string | null; service?: string | null }
+  collectedData?: { name?: string | null; email?: string | null; date?: string | null; time?: string | null; service?: string | null }
 ): string {
   const currentDate = new Date().toLocaleDateString('es-CL', {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
@@ -395,15 +405,15 @@ export function createDynamicPrompt(
   });
 
   const hasName = !!collectedData?.name && collectedData.name.trim().length > 0;
+  const hasEmail = !!collectedData?.email && collectedData.email.includes('@');
   const hasDate = !!collectedData?.date;
   const hasTime = !!collectedData?.time;
-
 
   // 1. FICHA TÉCNICA (ESTADO ABSOLUTO)
   const availableSlots = availability?.available_slots || [];
   const cleanRequestedTime = requestedSlot?.time?.trim();
   const isSlotFree = cleanRequestedTime && availableSlots.includes(cleanRequestedTime);
-  const allDataReady = hasName && hasDate && hasTime && isSlotFree;
+  const allDataReady = hasName && hasEmail && hasDate && hasTime && isSlotFree;
 
   // Si no hay fecha, no podemos decir "Sin cupos", debemos pedir la fecha.
   const availableText = !hasDate ? 'Pendiente determinar fecha' : (availableSlots.length > 0 ? availableSlots.join(', ') : 'Sin cupos para este día');
@@ -411,6 +421,7 @@ export function createDynamicPrompt(
   const statusMemo = `
 ### MEMORIA INTERNA - NO REPETIR ###
 - PACIENTE: ${collectedData?.name || 'DESCONOCIDO'}
+- EMAIL: ${collectedData?.email || 'PENDIENTE'}
 - FECHA: ${collectedData?.date || 'PENDIENTE'}
 - HORA: ${collectedData?.time || 'PENDIENTE'}
 - CALENDAR: ${isSlotFree ? '✅ LIBRE' : '❌ OCUPADA/PENDIENTE'}
@@ -419,7 +430,9 @@ export function createDynamicPrompt(
 
   let flowInstruction = '';
   if (allDataReady) {
-    flowInstruction = `ORDEN: CONFIRMA AHORA. Responde exactamente: "✓ Cita agendada. Paciente: ${collectedData!.name}, Día: ${collectedData!.date}, Hora: ${collectedData!.time}, Servicio: Consulta."`;
+    flowInstruction = `ORDEN: CONFIRMA AHORA. Responde exactamente: "✓ Cita agendada. Paciente: ${collectedData!.name}, Email: ${collectedData!.email}, Día: ${collectedData!.date}, Hora: ${collectedData!.time}, Servicio: ${collectedData?.service || 'Consulta'}."`;
+  } else if (hasName && hasDate && hasTime && isSlotFree && !hasEmail) {
+    flowInstruction = `ORDEN: Ya tienes nombre, fecha y hora. AHORA PIDE EL CORREO ELECTRÓNICO educadamente para enviar la confirmación.`;
   } else if (hasDate && hasTime && !isSlotFree) {
     flowInstruction = `ORDEN: La hora ${collectedData?.time} está ocupada para el ${collectedData?.date}. Ofrece solo estas: ${availableText}.`;
   } else if (!hasName) {

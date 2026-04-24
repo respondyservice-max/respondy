@@ -58,19 +58,23 @@ export async function GET(request: NextRequest) {
           patientName = parts.slice(1).join(' - ').trim();
         }
 
-        // Extraer teléfono de la descripción si viene de la IA
+        // Extraer teléfono y email de la descripción o asistentes
         const desc = e.description || '';
         const phoneMatch = desc.match(/[Tt]el[ée]fono[:\s]+(\+?[\d\s]+)/);
         const phone = phoneMatch ? phoneMatch[1].trim() : '';
+        const email = e.attendees?.[0]?.email || '';
+        const meetLink = e.conferenceData?.entryPoints?.find(ep => ep.entryPointType === 'video')?.uri || null;
 
         return {
           id: e.id,
           google_event_id: e.id,
           patient_name: patientName,
           patient_phone: phone,
+          patient_email: email,
           service,
           date_time: startDT,
-          source: 'google_calendar', // Para distinguir en el front
+          meet_link: meetLink,
+          source: 'google_calendar',
         };
       });
 
