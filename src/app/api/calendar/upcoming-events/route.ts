@@ -62,7 +62,12 @@ export async function GET(request: NextRequest) {
         const desc = e.description || '';
         const phoneMatch = desc.match(/[Tt]el[ée]fono[:\s]+(\+?[\d\s]+)/);
         const phone = phoneMatch ? phoneMatch[1].trim() : '';
-        const email = e.attendees?.[0]?.email || '';
+        
+        // Filtrar para obtener el correo que NO sea el de la clínica
+        const businessEmail = business.google_calendar_email || business.google_calendar_id;
+        const patientEmail = e.attendees?.find(a => a.email !== businessEmail)?.email || '';
+        
+        const email = patientEmail;
         const meetLink = e.conferenceData?.entryPoints?.find(ep => ep.entryPointType === 'video')?.uri || null;
 
         return {
