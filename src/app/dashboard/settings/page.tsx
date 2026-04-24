@@ -302,10 +302,10 @@ ${onlineServices.length > 0 ? `IMPORTANTE: Contamos con servicios de videollamad
                 {zavuConnected ? (
                   <>
                     <span className="bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-bold">Conectado</span>
-                    <button onClick={() => router.push('/dashboard/setup')} className="text-xs font-bold text-gray-400 hover:text-red-500 underline">Desconectar</button>
+                    <button onClick={() => window.location.href = '/dashboard/setup'} className="text-xs font-bold text-gray-400 hover:text-red-500 underline">Desconectar</button>
                   </>
                 ) : (
-                  <button onClick={() => router.push('/dashboard/setup')} className="px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 transition-all">Conectar Zavu</button>
+                  <button onClick={() => window.location.href = '/dashboard/setup'} className="px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 transition-all">Conectar Zavu</button>
                 )}
               </div>
             </div>
@@ -319,10 +319,10 @@ ${onlineServices.length > 0 ? `IMPORTANTE: Contamos con servicios de videollamad
                 {calendarConnected ? (
                   <>
                     <span className="bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-bold">Conectado</span>
-                    <button onClick={() => router.push('/api/auth/google')} className="text-xs font-bold text-gray-400 hover:text-red-500 underline">Re-conectar</button>
+                    <button onClick={() => window.location.href = '/api/calendar/authorize'} className="text-xs font-bold text-gray-400 hover:text-red-500 underline">Re-conectar</button>
                   </>
                 ) : (
-                  <button onClick={() => router.push('/api/auth/google')} className="px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 transition-all">Conectar Google</button>
+                  <button onClick={() => window.location.href = '/api/calendar/authorize'} className="px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 transition-all">Conectar Google</button>
                 )}
               </div>
             </div>
