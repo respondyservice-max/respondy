@@ -272,8 +272,30 @@ export default function Settings() {
                   <span className="bg-gray-100 text-gray-500 px-3 py-1 rounded-full text-xs font-bold">Sin conexión</span>
                 )}
               </div>
-              <button onClick={() => window.location.href = '/api/calendar/authorize'} className={`w-full py-4 rounded-2xl font-bold transition flex items-center justify-center gap-2 ${calendarConnected ? 'bg-gray-100 text-gray-600 hover:bg-gray-200' : 'bg-white border-2 border-gray-200 text-gray-700 hover:border-blue-500 hover:text-blue-600'}`}>
-                {calendarConnected ? '⚙️ Re-sincronizar Calendario' : '🔗 Conectar Google Calendar'}
+              <button 
+                onClick={async () => {
+                  setSaving(true);
+                  try {
+                    const { data: { session } } = await supabase.auth.getSession();
+                    const res = await fetch('/api/calendar/authorize', {
+                      headers: { 'Authorization': `Bearer ${session?.access_token}` }
+                    });
+                    const data = await res.json();
+                    if (data.authUrl) {
+                      window.location.href = data.authUrl;
+                    } else {
+                      alert('Error al obtener URL de Google');
+                    }
+                  } catch (e) {
+                    alert('Error técnico al conectar Google');
+                  } finally {
+                    setSaving(false);
+                  }
+                }} 
+                disabled={saving}
+                className={`w-full py-4 rounded-2xl font-bold transition flex items-center justify-center gap-2 ${calendarConnected ? 'bg-gray-100 text-gray-600 hover:bg-gray-200' : 'bg-white border-2 border-gray-200 text-gray-700 hover:border-blue-500 hover:text-blue-600'}`}
+              >
+                {saving ? <Loader className="w-5 h-5 animate-spin" /> : (calendarConnected ? '⚙️ Re-sincronizar Calendario' : '🔗 Conectar Google Calendar')}
               </button>
             </div>
 
