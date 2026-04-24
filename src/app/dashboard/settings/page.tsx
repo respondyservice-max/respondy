@@ -1,10 +1,10 @@
-// app/dashboard/settings/page.tsx - SETTINGS RESTAURADO Y FUNCIONAL
+// app/dashboard/settings/page.tsx - SETTINGS PROFESIONAL RESTAURADO
 'use client';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import DashboardNav from '@/components/DashboardNav';
 import { useRouter } from 'next/navigation';
-import { CheckCircle, Loader, ExternalLink, HelpCircle, Info, Plus, Trash2, Video, VideoOff, Save, ShieldAlert, Key } from 'lucide-react';
+import { CheckCircle, Loader, Info, Plus, Trash2, Video, VideoOff, Save, ShieldAlert, Key, MessageSquare, Sparkles } from 'lucide-react';
 import type { Business } from '@/types';
 
 interface ServiceItem {
@@ -20,9 +20,9 @@ export default function Settings() {
   const [saving, setSaving] = useState(false);
   const [zavuConnected, setZavuConnected] = useState(false);
   const [calendarConnected, setCalendarConnected] = useState(false);
-  const [schedulingMode, setSchedulingMode] = useState<'auto' | 'link'>('link');
-  const [bookingLink, setBookingLink] = useState('');
   const [activeTab, setActiveTab] = useState<'agente' | 'integraciones'>('agente');
+  
+  // Agent State
   const [agentName, setAgentName] = useState('Sofía');
   const [agentPersonality, setAgentPersonality] = useState('amable');
   const [promptMode, setPromptMode] = useState<'agendador' | 'conversacional'>('agendador');
@@ -59,8 +59,6 @@ export default function Settings() {
         });
         
         setZavuConnected(!!data.zavu_api_key_encrypted);
-        setSchedulingMode(data.scheduling_mode || 'link');
-        setBookingLink(data.booking_link || '');
         setCalendarConnected(!!data.google_calendar_id || !!data.google_calendar_access_token_encrypted);
 
         const config = data.weekly_schedule?._config || {};
@@ -76,40 +74,39 @@ export default function Settings() {
     fetchBusiness();
   }, [router]);
 
-  const handleSaveZavu = async () => {
-    if (!zavuApiKey || !zavuSenderId) { alert('Ambos campos son requeridos'); return; }
-    setSaving(true);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch('/api/business/credentials', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
-        body: JSON.stringify({ zavu_api_key: zavuApiKey, zavu_sender_id: zavuSenderId })
-      });
-      if (res.ok) {
-        setZavuConnected(true);
-        setZavuApiKey('');
-        setZavuSenderId('');
-        alert('✅ Conectado a WhatsApp correctamente');
-      } else {
-        const err = await res.json();
-        alert('❌ Error: ' + err.error);
-      }
-    } catch (e) { alert('Error técnico al conectar'); }
-    finally { setSaving(false); }
-  };
+  const handleGeneratePrompt = () => {
+    const servicesStr = servicesList.map(s => s.name).filter(Boolean).join(', ');
+    const onlineServices = servicesList.filter(s => s.isVideo).map(s => s.name);
+    
+    const personalityMap = {
+      amable: 'Sé siempre muy amable, servicial y utiliza un lenguaje cálido.',
+      profesional: 'Mantén un tono serio, profesional, experto y muy eficiente.',
+      divertido: 'Sé muy divertido, usa muchos emojis ✨😃 y un lenguaje cercano y alegre.'
+    };
 
-  const handleDisconnectZavu = async () => {
-    if (!confirm('¿Seguro que quieres desconectar WhatsApp? El bot dejará de funcionar.')) return;
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      await fetch('/api/business/disconnect-zavu', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${session?.access_token}` }
-      });
-      setZavuConnected(false);
-      alert('WhatsApp desconectado');
-    } catch (e) { console.error(e); }
+    const richPrompt = `
+# PERSONALIDAD Y ROL
+Eres ${agentName}, la asistente experta de "${form.name}". ${personalityMap[agentPersonality as keyof typeof personalityMap]}
+
+# OBJETIVO
+Tu misión es ayudar a los pacientes a resolver dudas y agendar sus citas de manera fluida y profesional.
+
+# SERVICIOS OFRECIDOS
+Ofrecemos: ${servicesStr}.
+${onlineServices.length > 0 ? `⚠️ NOTA ESPECIAL: Contamos con servicios de videollamada (test online/evaluación virtual) para: ${onlineServices.join(', ')}. Siempre ofrece esta opción si el paciente busca comodidad.` : ''}
+
+# REGLAS DE ORO (ESTRICTAS)
+1. **Validación de Datos**: NUNCA confirmes una cita sin tener estos 4 datos: Nombre completo, Email, Fecha y Hora.
+2. **Correo Obligatorio**: Si ya tienes nombre, fecha y hora, pide educadamente el Email para enviar la confirmación y el link de Meet.
+3. **Brevedad**: En WhatsApp la gente no lee párrafos largos. Sé breve, usa viñetas si es necesario.
+4. **Disponibilidad**: Consulta siempre la lista de horarios que te proporcionaré y ofrece opciones claras si el cupo solicitado está ocupado.
+5. **Estilo**: ${promptMode === 'conversacional' ? 'Charla un poco antes de ir directo al agendamiento para generar confianza.' : 'Sé muy directo y guía al paciente al agendamiento lo más rápido posible.'}
+
+# CIERRE
+Al finalizar, indica que recibirá un ticket de confirmación por este medio.
+`.trim();
+
+    setForm({ ...form, prompt_custom: richPrompt });
   };
 
   const handleSaveAll = async () => {
@@ -132,8 +129,6 @@ export default function Settings() {
         name: form.name,
         services: servicesList.map(s => s.name).filter(Boolean),
         prompt_custom: form.prompt_custom,
-        scheduling_mode: schedulingMode,
-        booking_link: bookingLink,
         weekly_schedule: updatedSchedule
       }).eq('user_id', user?.id);
       
@@ -151,7 +146,7 @@ export default function Settings() {
       <main className="max-w-4xl mx-auto px-4 py-8">
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900">⚙️ Configuración</h1>
-          <p className="text-gray-500 mt-1">Personaliza tu agente IA e integra tus servicios</p>
+          <p className="text-gray-500 mt-1">Define tus servicios y personaliza tu agente IA</p>
         </div>
 
         {/* Tabs */}
@@ -162,69 +157,14 @@ export default function Settings() {
 
         {activeTab === 'agente' && (
           <div className="space-y-6">
-            {/* Personalidad del Agente */}
-            <div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-100">
-              <h2 className="text-xl font-bold mb-6 flex items-center gap-2"><CheckCircle className="w-6 h-6 text-blue-600" /> Identidad de {agentName}</h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-2">Nombre del Agente</label>
-                  <input type="text" value={agentName} onChange={e => setAgentName(e.target.value)} className="w-full px-4 py-3 border rounded-xl focus:ring-2 focus:ring-blue-500 outline-none" />
-                </div>
-                <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-2">Personalidad</label>
-                  <select value={agentPersonality} onChange={e => setAgentPersonality(e.target.value)} className="w-full px-4 py-3 border rounded-xl focus:ring-2 focus:ring-blue-500 outline-none">
-                    <option value="amable">😊 Amable y servicial</option>
-                    <option value="profesional">💼 Profesional y directo</option>
-                    <option value="divertido">✨ Divertido y con emojis</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-
-            {/* Configuración de Comportamiento */}
-            <div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-100">
-              <h2 className="text-xl font-bold mb-6 flex items-center gap-2"><Info className="w-6 h-6 text-blue-600" /> Comportamiento del Agente</h2>
-              <div className="space-y-6">
-                <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-2">Modo de Operación</label>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <button onClick={() => setPromptMode('agendador')} className={`p-4 rounded-xl border-2 text-left transition-all ${promptMode === 'agendador' ? 'border-blue-500 bg-blue-50' : 'border-gray-100 hover:border-gray-200'}`}>
-                      <p className="font-bold text-gray-900">🎯 Modo Agendador</p>
-                      <p className="text-xs text-gray-500 mt-1">Va directo al grano para cerrar la cita lo antes posible.</p>
-                    </button>
-                    <button onClick={() => setPromptMode('conversacional')} className={`p-4 rounded-xl border-2 text-left transition-all ${promptMode === 'conversacional' ? 'border-blue-500 bg-blue-50' : 'border-gray-100 hover:border-gray-200'}`}>
-                      <p className="font-bold text-gray-900">💬 Modo Conversacional</p>
-                      <p className="text-xs text-gray-500 mt-1">Charla más con el paciente antes de pedir los datos.</p>
-                    </button>
-                  </div>
-                </div>
-
-                <div>
-                  <div className="flex justify-between items-center mb-2">
-                    <label className="block text-sm font-bold text-gray-700">Instrucciones del Agente (Prompt)</label>
-                    <button onClick={() => {
-                      const servicesStr = servicesList.map(s => s.name).filter(Boolean).join(', ');
-                      const personalityMap = { amable: 'Sé siempre muy amable y servicial.', profesional: 'Mantén un tono serio, profesional y eficiente.', divertido: 'Sé divertido, usa muchos emojis y lenguaje cercano.' };
-                      const base = `Eres ${agentName}, la asistente de ${form.name}. ${personalityMap[agentPersonality as keyof typeof personalityMap]} Tus servicios son: ${servicesStr}. Tu objetivo es agendar citas.`;
-                      setForm({ ...form, prompt_custom: base });
-                    }} className="text-xs text-blue-600 font-bold hover:underline">Generar base automática</button>
-                  </div>
-                  <textarea 
-                    value={form.prompt_custom} 
-                    onChange={e => setForm({ ...form, prompt_custom: e.target.value })}
-                    rows={8}
-                    className="w-full px-4 py-3 border rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-mono bg-gray-50"
-                    placeholder="Escribe aquí las reglas que debe seguir tu IA..."
-                  />
-                  <p className="text-xs text-gray-400 mt-2 italic">Tip: Aquí puedes definir promociones, precios o reglas específicas de atención.</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Servicios Estructurados */}
+            
+            {/* 1. SERVICIOS (AHORA PRIMERO) */}
             <div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-100">
               <div className="flex justify-between items-center mb-6">
-                <h2 className="text-xl font-bold flex items-center gap-2"><Plus className="w-6 h-6 text-blue-600" /> Servicios y Precios</h2>
+                <div>
+                  <h2 className="text-xl font-bold flex items-center gap-2"><Plus className="w-6 h-6 text-blue-600" /> 1. Servicios y Precios</h2>
+                  <p className="text-xs text-gray-500 mt-1">Define qué ofreces y si es por videollamada 🎥</p>
+                </div>
                 <button onClick={() => setServicesList([...servicesList, { id: Math.random().toString(36).substring(7), name: '', isVideo: false }])} className="px-4 py-2 bg-blue-50 text-blue-600 rounded-xl text-sm font-bold hover:bg-blue-100 transition flex items-center gap-2"><Plus className="w-4 h-4" /> Agregar</button>
               </div>
               <div className="space-y-3">
@@ -234,13 +174,13 @@ export default function Settings() {
                       const newList = [...servicesList];
                       newList[idx].name = e.target.value;
                       setServicesList(newList);
-                    }} placeholder="Nombre del servicio (ej: Limpieza Dental)" className="flex-1 bg-transparent border-none outline-none text-sm font-medium" />
+                    }} placeholder="Ej: Evaluación Dental" className="flex-1 bg-transparent border-none outline-none text-sm font-medium" />
                     <button onClick={() => {
                       const newList = [...servicesList];
                       newList[idx].isVideo = !newList[idx].isVideo;
                       setServicesList(newList);
-                    }} className={`p-2 rounded-lg transition ${service.isVideo ? 'bg-indigo-100 text-indigo-600' : 'bg-gray-200 text-gray-400'}`} title={service.isVideo ? 'Es videollamada' : 'Es presencial'}>
-                      {service.isVideo ? <Video className="w-4 h-4" /> : <VideoOff className="w-4 h-4" />}
+                    }} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition ${service.isVideo ? 'bg-indigo-600 text-white shadow-md shadow-indigo-200' : 'bg-gray-200 text-gray-400'}`}>
+                      {service.isVideo ? <><Video className="w-3.5 h-3.5" /> Videollamada</> : <><VideoOff className="w-3.5 h-3.5" /> Presencial</>}
                     </button>
                     <button onClick={() => setServicesList(servicesList.filter(s => s.id !== service.id))} className="p-2 text-red-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition"><Trash2 className="w-4 h-4" /></button>
                   </div>
@@ -248,7 +188,56 @@ export default function Settings() {
               </div>
             </div>
 
-            <button onClick={handleSaveAll} disabled={saving} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold hover:bg-blue-700 transition shadow-lg shadow-blue-500/20 flex items-center justify-center gap-2">{saving ? <Loader className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />} Guardar Configuración</button>
+            {/* 2. IDENTIDAD */}
+            <div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-100">
+              <h2 className="text-xl font-bold mb-6 flex items-center gap-2"><Sparkles className="w-6 h-6 text-blue-600" /> 2. Personalidad de {agentName}</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-2">Nombre de la IA</label>
+                  <input type="text" value={agentName} onChange={e => setAgentName(e.target.value)} className="w-full px-4 py-3 border rounded-xl focus:ring-2 focus:ring-blue-500 outline-none" />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-2">Tono de voz</label>
+                  <select value={agentPersonality} onChange={e => setAgentPersonality(e.target.value)} className="w-full px-4 py-3 border rounded-xl focus:ring-2 focus:ring-blue-500 outline-none">
+                    <option value="amable">😊 Amable y servicial</option>
+                    <option value="profesional">💼 Profesional y directo</option>
+                    <option value="divertido">✨ Divertido y con emojis</option>
+                  </select>
+                </div>
+              </div>
+              
+              <div className="space-y-4">
+                <label className="block text-sm font-bold text-gray-700">Modo de Conversación</label>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <button onClick={() => setPromptMode('agendador')} className={`p-4 rounded-xl border-2 text-left transition-all ${promptMode === 'agendador' ? 'border-blue-500 bg-blue-50' : 'border-gray-100 hover:border-gray-200'}`}>
+                    <p className="font-bold text-gray-900 text-sm">🎯 Enfocado a Citas</p>
+                    <p className="text-[10px] text-gray-500 mt-1 uppercase font-bold tracking-wider">Eficiencia máxima</p>
+                  </button>
+                  <button onClick={() => setPromptMode('conversacional')} className={`p-4 rounded-xl border-2 text-left transition-all ${promptMode === 'conversacional' ? 'border-blue-500 bg-blue-50' : 'border-gray-100 hover:border-gray-200'}`}>
+                    <p className="font-bold text-gray-900 text-sm">💬 Charla Amigable</p>
+                    <p className="text-[10px] text-gray-500 mt-1 uppercase font-bold tracking-wider">Generar confianza</p>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* 3. PROMPT (AHORA DESPUÉS DE SERVICIOS) */}
+            <div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-100">
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-xl font-bold flex items-center gap-2"><MessageSquare className="w-6 h-6 text-blue-600" /> 3. Instrucciones de la IA (Prompt)</h2>
+                <button onClick={handleGeneratePrompt} className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl text-xs font-bold hover:shadow-lg transition-all flex items-center gap-2">✨ Regenerar con servicios actuales</button>
+              </div>
+              <textarea 
+                value={form.prompt_custom} 
+                onChange={e => setForm({ ...form, prompt_custom: e.target.value })}
+                rows={12}
+                className="w-full px-4 py-4 border rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-mono bg-slate-50 leading-relaxed"
+                placeholder="Aquí aparecerán las instrucciones de tu IA..."
+              />
+              <p className="text-xs text-gray-400 mt-3 italic flex items-center gap-1"><Info className="w-3 h-3" /> Tip: El botón de arriba reconstruye el prompt usando tus servicios y personalidad actual.</p>
+            </div>
+
+            <button onClick={handleSaveAll} disabled={saving} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold hover:bg-blue-700 transition shadow-lg shadow-blue-500/20 flex items-center justify-center gap-2 text-lg">{saving ? <Loader className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />} Guardar Toda la Configuración</button>
           </div>
         )}
 
@@ -258,14 +247,10 @@ export default function Settings() {
             <div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-100">
               <div className="flex justify-between items-start mb-6">
                 <div>
-                  <h2 className="text-xl font-bold flex items-center gap-2"><ExternalLink className="w-6 h-6 text-blue-600" /> WhatsApp (Zavu)</h2>
-                  <p className="text-sm text-gray-500 mt-1">Conecta tu número de WhatsApp para que el bot responda automáticamente.</p>
+                  <h2 className="text-xl font-bold flex items-center gap-2"><Plus className="w-6 h-6 text-blue-600" /> WhatsApp (Zavu)</h2>
+                  <p className="text-sm text-gray-500 mt-1">Credenciales de tu número vinculado.</p>
                 </div>
-                {zavuConnected ? (
-                  <span className="bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-bold">Conectado</span>
-                ) : (
-                  <span className="bg-gray-100 text-gray-500 px-3 py-1 rounded-full text-xs font-bold">Sin conexión</span>
-                )}
+                {zavuConnected ? <span className="bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-bold">Conectado</span> : <span className="bg-gray-100 text-gray-500 px-3 py-1 rounded-full text-xs font-bold">Sin conexión</span>}
               </div>
 
               {!zavuConnected ? (
@@ -283,80 +268,62 @@ export default function Settings() {
                       <input type="text" value={zavuSenderId} onChange={e => setZavuSenderId(e.target.value)} placeholder="ID de tu número..." className="w-full px-4 py-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500" />
                     </div>
                   </div>
-                  <button onClick={handleSaveZavu} disabled={saving} className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition flex items-center justify-center gap-2">{saving ? <Loader className="w-4 h-4 animate-spin" /> : 'Conectar WhatsApp'}</button>
+                  <button onClick={async () => {
+                    if (!zavuApiKey || !zavuSenderId) return alert('Campos vacíos');
+                    setSaving(true);
+                    try {
+                      const { data: { session } } = await supabase.auth.getSession();
+                      const res = await fetch('/api/business/credentials', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` }, body: JSON.stringify({ zavu_api_key: zavuApiKey, zavu_sender_id: zavuSenderId }) });
+                      if (res.ok) { setZavuConnected(true); alert('WhatsApp conectado'); } else alert('Error al conectar');
+                    } catch (e) { console.error(e); } finally { setSaving(false); }
+                  }} disabled={saving} className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition flex items-center justify-center gap-2">Conectar WhatsApp</button>
                 </div>
               ) : (
                 <div className="flex justify-between items-center bg-green-50 p-4 rounded-xl border border-green-100">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center text-green-600"><CheckCircle className="w-6 h-6" /></div>
-                    <div>
-                      <p className="font-bold text-green-900 text-sm">Agente vinculado correctamente</p>
-                      <p className="text-green-700 text-xs">Tus mensajes están siendo procesados por la IA.</p>
-                    </div>
+                    <p className="font-bold text-green-900 text-sm">Agente vinculado correctamente</p>
                   </div>
-                  <button onClick={handleDisconnectZavu} className="text-xs font-bold text-red-400 hover:text-red-600 underline">Desconectar</button>
+                  <button onClick={async () => { if(!confirm('¿Desconectar?')) return; const { data: { session } } = await supabase.auth.getSession(); await fetch('/api/business/disconnect-zavu', { method: 'POST', headers: { 'Authorization': `Bearer ${session?.access_token}` } }); setZavuConnected(false); }} className="text-xs font-bold text-red-400 hover:text-red-600 underline">Desconectar</button>
                 </div>
               )}
             </div>
 
-            {/* Google Calendar Section */}
+            {/* Google Calendar */}
             <div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-100">
               <div className="flex justify-between items-start mb-6">
                 <div>
                   <h2 className="text-xl font-bold flex items-center gap-2">📅 Google Calendar</h2>
-                  <p className="text-sm text-gray-500 mt-1">Sincroniza la disponibilidad y guarda citas automáticamente.</p>
+                  <p className="text-sm text-gray-500 mt-1">Agendamiento automático sincronizado.</p>
                 </div>
-                {calendarConnected ? (
-                  <span className="bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-bold">Conectado</span>
-                ) : (
-                  <span className="bg-gray-100 text-gray-500 px-3 py-1 rounded-full text-xs font-bold">Sin conexión</span>
-                )}
+                {calendarConnected ? <span className="bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-bold">Conectado</span> : <span className="bg-gray-100 text-gray-500 px-3 py-1 rounded-full text-xs font-bold">Sin conexión</span>}
               </div>
-              <button 
-                onClick={async () => {
-                  setSaving(true);
-                  try {
-                    const { data: { session } } = await supabase.auth.getSession();
-                    const res = await fetch('/api/calendar/authorize', {
-                      headers: { 'Authorization': `Bearer ${session?.access_token}` }
-                    });
-                    const data = await res.json();
-                    if (data.authUrl) {
-                      window.location.href = data.authUrl;
-                    } else {
-                      alert('Error al obtener URL de Google');
-                    }
-                  } catch (e) {
-                    alert('Error técnico al conectar Google');
-                  } finally {
-                    setSaving(false);
-                  }
-                }} 
-                disabled={saving}
-                className={`w-full py-4 rounded-2xl font-bold transition flex items-center justify-center gap-2 ${calendarConnected ? 'bg-gray-100 text-gray-600 hover:bg-gray-200' : 'bg-white border-2 border-gray-200 text-gray-700 hover:border-blue-500 hover:text-blue-600'}`}
-              >
-                {saving ? <Loader className="w-5 h-5 animate-spin" /> : (calendarConnected ? '⚙️ Re-sincronizar Calendario' : '🔗 Conectar Google Calendar')}
+              <button onClick={async () => { 
+                setSaving(true);
+                try {
+                  const { data: { session } } = await supabase.auth.getSession();
+                  const res = await fetch('/api/calendar/authorize', { headers: { 'Authorization': `Bearer ${session?.access_token}` } });
+                  const data = await res.json();
+                  if (data.authUrl) window.location.href = data.authUrl;
+                } catch (e) { console.error(e); } finally { setSaving(false); }
+              }} className="w-full py-4 bg-white border-2 border-gray-200 text-gray-700 rounded-2xl font-bold hover:border-blue-500 hover:text-blue-600 transition flex items-center justify-center gap-2">
+                {calendarConnected ? '⚙️ Re-sincronizar Calendario' : '🔗 Conectar Google Calendar'}
               </button>
             </div>
 
-            {/* Blacklist Section */}
+            {/* Blacklist */}
             <div className="bg-white rounded-2xl p-8 shadow-sm border border-red-50">
-              <h2 className="text-xl font-bold text-red-900 mb-6 flex items-center gap-2"><ShieldAlert className="w-6 h-6 text-red-600" /> Números Bloqueados (Blacklist)</h2>
-              <p className="text-sm text-red-700 mb-4 bg-red-50 p-4 rounded-xl">Los números en esta lista serán ignorados por el bot. Útil para familiares, conocidos o spam.</p>
+              <h2 className="text-xl font-bold text-red-900 mb-6 flex items-center gap-2"><ShieldAlert className="w-6 h-6 text-red-600" /> Números Bloqueados</h2>
               <div className="flex gap-2 mb-4">
-                <input type="text" value={newBlockedNumber} onChange={e => setNewBlockedNumber(e.target.value)} placeholder="Ej: 56912345678" className="flex-1 px-4 py-3 border border-red-100 rounded-xl outline-none focus:ring-2 focus:ring-red-500" />
-                <button onClick={() => { if(!newBlockedNumber) return; setBlockedNumbers([...blockedNumbers, newBlockedNumber.replace('+', '')]); setNewBlockedNumber(''); }} className="px-6 py-3 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition">Bloquear</button>
+                <input type="text" value={newBlockedNumber} onChange={e => setNewBlockedNumber(e.target.value)} placeholder="Ej: 56912345678" className="flex-1 px-4 py-3 border border-red-100 rounded-xl outline-none" />
+                <button onClick={() => { if(!newBlockedNumber) return; setBlockedNumbers([...blockedNumbers, newBlockedNumber]); setNewBlockedNumber(''); }} className="px-6 py-3 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition">Bloquear</button>
               </div>
               <div className="flex flex-wrap gap-2">
-                {blockedNumbers.map(num => (
-                  <div key={num} className="flex items-center gap-2 px-3 py-1.5 bg-red-50 text-red-700 rounded-full text-sm font-bold border border-red-100">
-                    {num} <button onClick={() => setBlockedNumbers(blockedNumbers.filter(n => n !== num))} className="text-red-400 hover:text-red-600"><Trash2 className="w-3.5 h-3.5" /></button>
-                  </div>
-                ))}
+                {blockedNumbers.map(num => <div key={num} className="flex items-center gap-2 px-3 py-1 bg-red-50 text-red-700 rounded-full text-xs font-bold border border-red-100">{num} <button onClick={() => setBlockedNumbers(blockedNumbers.filter(n => n !== num))}><Trash2 className="w-3 h-3" /></button></div>)}
               </div>
             </div>
 
-            <button onClick={handleSaveAll} disabled={saving} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold hover:bg-blue-700 transition shadow-lg shadow-blue-500/20 flex items-center justify-center gap-2">{saving ? <Loader className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />} Guardar Todo</button>
+            <button onClick={handleSaveAll} disabled={saving} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold hover:bg-blue-700 transition flex items-center justify-center gap-2 text-lg">Guardar Todo</button>
           </div>
         )}
       </main>
