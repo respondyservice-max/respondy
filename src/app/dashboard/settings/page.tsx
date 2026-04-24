@@ -298,14 +298,33 @@ ${onlineServices.length > 0 ? `IMPORTANTE: Contamos con servicios de videollamad
                 <h2 className="text-lg font-bold">📱 WhatsApp (Zavu)</h2>
                 <p className="text-sm text-gray-500">Conexión con tu número de WhatsApp</p>
               </div>
-              {zavuConnected ? <span className="bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-bold">Conectado</span> : <span className="bg-gray-100 text-gray-500 px-3 py-1 rounded-full text-xs font-bold">No conectado</span>}
+              <div className="flex items-center gap-3">
+                {zavuConnected ? (
+                  <>
+                    <span className="bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-bold">Conectado</span>
+                    <button onClick={() => router.push('/dashboard/setup')} className="text-xs font-bold text-gray-400 hover:text-red-500 underline">Desconectar</button>
+                  </>
+                ) : (
+                  <button onClick={() => router.push('/dashboard/setup')} className="px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 transition-all">Conectar Zavu</button>
+                )}
+              </div>
             </div>
+            
             <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 flex justify-between items-center">
               <div>
                 <h2 className="text-lg font-bold">📅 Google Calendar</h2>
                 <p className="text-sm text-gray-500">Sincronización de citas y disponibilidad</p>
               </div>
-              {calendarConnected ? <span className="bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-bold">Conectado</span> : <span className="bg-gray-100 text-gray-500 px-3 py-1 rounded-full text-xs font-bold">No conectado</span>}
+              <div className="flex items-center gap-3">
+                {calendarConnected ? (
+                  <>
+                    <span className="bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-bold">Conectado</span>
+                    <button onClick={() => router.push('/api/auth/google')} className="text-xs font-bold text-gray-400 hover:text-red-500 underline">Re-conectar</button>
+                  </>
+                ) : (
+                  <button onClick={() => router.push('/api/auth/google')} className="px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 transition-all">Conectar Google</button>
+                )}
+              </div>
             </div>
 
             {/* LISTA NEGRA */}
