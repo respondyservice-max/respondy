@@ -40,6 +40,13 @@ export async function POST(request: NextRequest) {
 
     const normalizedPhone = phoneFrom.replace('+', '');
 
+    // ── 0. FILTRO DE BLOQUEO (LISTA NEGRA) ──
+    const blockedNumbers = targetBusiness.weekly_schedule?._config?.blocked_numbers || [];
+    if (blockedNumbers.includes(normalizedPhone)) {
+      console.log(`🚫 Número bloqueado: ${normalizedPhone}. Ignorando mensaje.`);
+      return NextResponse.json({ success: true, message: 'Número bloqueado' });
+    }
+
     // ── 0. GUARDAR MENSAJE DE USUARIO AL INICIO ──
     await supabaseAdmin.from('conversations').insert({
       business_id: targetBusiness.id,
@@ -66,7 +73,7 @@ export async function POST(request: NextRequest) {
       });
       const linkData = await linkGroqRes.json();
       const linkBotResponse = linkData.choices?.[0]?.message?.content || `Agendar aquí: ${targetBusiness.booking_link}`;
-
+      
       await fetch('https://api.zavu.dev/v1/messages', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${zavuApiKey}`, 'Content-Type': 'application/json' },
@@ -87,10 +94,10 @@ export async function POST(request: NextRequest) {
 
     const historyText = (previousMessages || []).reverse()
       .map(m => `${m.message_type === 'incoming' ? 'Usuario' : 'Asistente'}: ${m.message_text}`).join('\n');
-
+    
     // ── 3. Parsear datos con IA ──
     const parsed = await parseClientMessage(`${historyText}\nUsuario: ${messageText}`);
-
+    
     // ── 3.1 Memoria de Borradores (15 mins) ──
     const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
     let { data: sessionData } = await supabaseAdmin
@@ -168,7 +175,6 @@ export async function POST(request: NextRequest) {
       }
       
       if (fD && fT && fN) {
-        // Buscar si el servicio es videollamada
         const config = targetBusiness.weekly_schedule?._config || {};
         const servicesList = config.services_list || [];
         const serviceData = servicesList.find((s: any) => 

@@ -307,6 +307,70 @@ ${onlineServices.length > 0 ? `IMPORTANTE: Contamos con servicios de videollamad
               </div>
               {calendarConnected ? <span className="bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-bold">Conectado</span> : <span className="bg-gray-100 text-gray-500 px-3 py-1 rounded-full text-xs font-bold">No conectado</span>}
             </div>
+
+            {/* LISTA NEGRA */}
+            <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+              <h2 className="text-lg font-bold mb-2">🚫 Números Bloqueados (Lista Negra)</h2>
+              <p className="text-xs text-gray-500 mb-4">El bot ignorará automáticamente cualquier mensaje de estos números.</p>
+              
+              <div className="flex gap-2 mb-4">
+                <input 
+                  type="text" 
+                  id="new-blocked-number"
+                  placeholder="Ej: 56912345678" 
+                  className="flex-1 px-4 py-2 border rounded-xl text-sm outline-none focus:ring-2 focus:ring-red-500"
+                />
+                <button 
+                  onClick={() => {
+                    const input = document.getElementById('new-blocked-number') as HTMLInputElement;
+                    if (input.value) {
+                      const updated = { 
+                        ...(business?.weekly_schedule || {}), 
+                        _config: { 
+                          ...(business?.weekly_schedule?._config || {}),
+                          blocked_numbers: [...(business?.weekly_schedule?._config?.blocked_numbers || []), input.value.replace(/\D/g, '')]
+                        } 
+                      };
+                      setBusiness({ ...business!, weekly_schedule: updated });
+                      input.value = '';
+                    }
+                  }}
+                  className="px-4 py-2 bg-red-50 text-red-600 rounded-xl text-sm font-bold border border-red-100 hover:bg-red-100 transition-all"
+                >
+                  Bloquear
+                </button>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                {(business?.weekly_schedule?._config?.blocked_numbers || []).map((num: string, idx: number) => (
+                  <div key={idx} className="flex items-center gap-2 bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-200 text-sm">
+                    <span className="font-mono">{num}</span>
+                    <button 
+                      onClick={() => {
+                        const updated = { 
+                          ...(business?.weekly_schedule || {}), 
+                          _config: { 
+                            ...(business?.weekly_schedule?._config || {}),
+                            blocked_numbers: business?.weekly_schedule?._config?.blocked_numbers.filter((n: string) => n !== num)
+                          } 
+                        };
+                        setBusiness({ ...business!, weekly_schedule: updated });
+                      }}
+                      className="text-gray-400 hover:text-red-500"
+                    >
+                      &times;
+                    </button>
+                  </div>
+                ))}
+                {(!business?.weekly_schedule?._config?.blocked_numbers || business?.weekly_schedule?._config?.blocked_numbers.length === 0) && (
+                  <p className="text-xs text-gray-400 italic">No hay números bloqueados.</p>
+                )}
+              </div>
+            </div>
+
+            <button onClick={handleSaveAll} disabled={saving} className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-2xl font-bold text-lg shadow-xl hover:scale-[1.01] transition-all disabled:opacity-50">
+              {saving ? 'Guardando...' : 'Guardar Configuración'}
+            </button>
           </div>
         )}
       </main>
