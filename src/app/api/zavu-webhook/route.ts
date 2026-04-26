@@ -41,20 +41,28 @@ export async function POST(request: NextRequest) {
     if (blockedNumbers.includes(normalizedPhone)) return NextResponse.json({ success: true, message: 'Bloqueado' });
 
     // ── 1. GUARDAR MENSAJE USUARIO ──
-    await supabaseAdmin.from('conversations').insert({
+    const insertResult = await supabaseAdmin.from('conversations').insert({
       business_id: targetBusiness.id,
       phone_from: normalizedPhone,
       message_type: 'incoming',
       message_text: messageText,
     });
 
+    console.log('💾 INSERT resultado:', {
+      error: insertResult.error,
+      normalizedPhone,
+      messageText
+    });
+
     await new Promise(resolve => setTimeout(resolve, 1000));
 
     // ── 2. OBTENER HISTORIAL (20 mensajes) ──
-    const { data: previousMessages } = await supabaseAdmin
+    const { data: previousMessages, error: historyError } = await supabaseAdmin
       .from('conversations').select('message_type, message_text')
       .eq('business_id', targetBusiness.id).eq('phone_from', normalizedPhone)
       .order('created_at', { ascending: false }).limit(20);
+
+    if (historyError) console.error('❌ Error obteniendo historial:', historyError);
 
     const historyArray = (previousMessages || []).reverse();
     
