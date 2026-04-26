@@ -40,13 +40,15 @@ export async function POST(request: NextRequest) {
 
     await new Promise(r => setTimeout(r, 1000));
 
-    // 2. OBTENER HISTORIAL (Traemos los últimos 20 y luego los invertimos)
+    // 2. OBTENER HISTORIAL (Últimos 10 mensajes de las últimas 2 horas)
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
     const { data: history, error: hErr } = await supabaseAdmin
       .from('conversations')
       .select('message_type, message_text, timestamp')
       .eq('phone_from', normalizedPhone)
-      .order('timestamp', { ascending: false }) // Trae los más RECIENTES primero
-      .limit(20);
+      .gte('timestamp', twoHoursAgo) // Solo mensajes recientes
+      .order('timestamp', { ascending: false })
+      .limit(10);
 
     if (hErr) console.error('❌ Error Supabase History:', hErr);
 
