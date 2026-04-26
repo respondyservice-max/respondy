@@ -34,6 +34,12 @@ export default function Settings() {
   const [zavuApiKey, setZavuApiKey] = useState('');
   const [zavuSenderId, setZavuSenderId] = useState('');
 
+  // Horarios
+  const [workingDays, setWorkingDays] = useState<number[]>([1, 2, 3, 4, 5]);
+  const [daySchedules, setDaySchedules] = useState<Record<string, {start: string, end: string}>>({});
+  const [dayStart, setDayStart] = useState('09:00');
+  const [dayEnd, setDayEnd] = useState('18:00');
+
   const [form, setForm] = useState({
     name: '',
     business_type: '',
@@ -67,6 +73,10 @@ export default function Settings() {
         setPromptMode(config.prompt_mode || 'agendador');
         setBlockedNumbers(config.blocked_numbers || []);
         setServicesList(config.services_list || []);
+        setWorkingDays(config.working_days || [1, 2, 3, 4, 5]);
+        setDaySchedules(config.day_schedules || {});
+        setDayStart(config.day_start || '09:00');
+        setDayEnd(config.day_end || '18:00');
 
       } catch (error) { console.error(error); }
       finally { setLoading(false); }
@@ -121,7 +131,11 @@ Al finalizar, indica que recibirá un ticket de confirmación por este medio.
           agent_personality: agentPersonality,
           prompt_mode: promptMode,
           services_list: servicesList,
-          blocked_numbers: blockedNumbers
+          blocked_numbers: blockedNumbers,
+          working_days: workingDays,
+          day_schedules: daySchedules,
+          day_start: dayStart,
+          day_end: dayEnd
         } 
       };
 
@@ -221,10 +235,74 @@ Al finalizar, indica que recibirá un ticket de confirmación por este medio.
               </div>
             </div>
 
-            {/* 3. PROMPT (AHORA DESPUÉS DE SERVICIOS) */}
+            {/* 3. HORARIOS DE ATENCIÓN */}
+            <div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-100">
+              <h2 className="text-xl font-bold mb-6 flex items-center gap-2">⏰ 3. Horarios de Atención</h2>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-2">Apertura General</label>
+                  <input type="time" value={dayStart} onChange={e => setDayStart(e.target.value)} className="w-full px-4 py-3 border rounded-xl outline-none" />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-2">Cierre General</label>
+                  <input type="time" value={dayEnd} onChange={e => setDayEnd(e.target.value)} className="w-full px-4 py-3 border rounded-xl outline-none" />
+                </div>
+              </div>
+
+              <div className="mb-6">
+                <label className="block text-sm font-bold text-gray-700 mb-3">Días Laborables</label>
+                <div className="flex flex-wrap gap-2">
+                  {[1, 2, 3, 4, 5, 6, 0].map(day => {
+                    const daysStr = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+                    const isActive = workingDays.includes(day);
+                    return (
+                      <button key={day} onClick={() => {
+                        if (isActive) setWorkingDays(workingDays.filter(d => d !== day));
+                        else setWorkingDays([...workingDays, day].sort());
+                      }} className={`px-4 py-2 rounded-xl text-sm font-bold transition ${isActive ? 'bg-blue-600 text-white shadow-md' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}>
+                        {daysStr[day]}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-3">Horarios Especiales (Opcional)</label>
+                <div className="space-y-3">
+                  {workingDays.map(day => {
+                    const daysStr = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+                    const hasSpecial = !!daySchedules[day];
+                    return (
+                      <div key={day} className="flex flex-col md:flex-row md:items-center gap-3 p-3 bg-gray-50 rounded-xl border border-gray-100">
+                        <div className="flex items-center gap-3 w-40">
+                          <input type="checkbox" checked={hasSpecial} onChange={e => {
+                            const newScheds = { ...daySchedules };
+                            if (e.target.checked) newScheds[day] = { start: dayStart, end: dayEnd };
+                            else delete newScheds[day];
+                            setDaySchedules(newScheds);
+                          }} className="w-4 h-4 text-blue-600 rounded border-gray-300" />
+                          <span className="text-sm font-bold text-gray-700">{daysStr[day]}</span>
+                        </div>
+                        {hasSpecial && (
+                          <div className="flex gap-2 items-center flex-1">
+                            <input type="time" value={daySchedules[day].start} onChange={e => setDaySchedules({ ...daySchedules, [day]: { ...daySchedules[day], start: e.target.value }})} className="px-3 py-1.5 text-sm border rounded-lg outline-none" />
+                            <span className="text-gray-400">a</span>
+                            <input type="time" value={daySchedules[day].end} onChange={e => setDaySchedules({ ...daySchedules, [day]: { ...daySchedules[day], end: e.target.value }})} className="px-3 py-1.5 text-sm border rounded-lg outline-none" />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* 4. PROMPT (AHORA DESPUÉS DE HORARIOS) */}
             <div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-100">
               <div className="flex justify-between items-center mb-6">
-                <h2 className="text-xl font-bold flex items-center gap-2"><MessageSquare className="w-6 h-6 text-blue-600" /> 3. Instrucciones de la IA (Prompt)</h2>
+                <h2 className="text-xl font-bold flex items-center gap-2"><MessageSquare className="w-6 h-6 text-blue-600" /> 4. Instrucciones de la IA (Prompt)</h2>
                 <button onClick={handleGeneratePrompt} className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl text-xs font-bold hover:shadow-lg transition-all flex items-center gap-2">✨ Regenerar con servicios actuales</button>
               </div>
               <textarea 
