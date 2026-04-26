@@ -129,28 +129,26 @@ export async function checkAvailability(
 
   const events = data.items || [];
 
-  // Extraer horarios ocupados en hora Chile
-  const occupied_times: string[] = [];
+  // 1. Mapear eventos a rangos de minutos en Chile
+  const occupiedRanges: { start: number; end: number }[] = [];
   for (const event of events) {
     const start = (event.start?.dateTime || event.start?.date) as string;
-    if (start) {
-      const d = new Date(start);
-      // Validar que el evento sea del día solicitado en hora Chile
-      const eventDateChile = d.toLocaleDateString('en-CA', { timeZone: 'America/Santiago' }); // en-CA gives YYYY-MM-DD
-      if (eventDateChile !== date) continue;
+    const end = (event.end?.dateTime || event.end?.date) as string;
+    if (start && end) {
+      const dStart = new Date(start);
+      const dEnd = new Date(end);
+      
+      const getMins = (d: Date) => {
+        const h = Number(d.toLocaleTimeString('es-CL', { hour: '2-digit', hour12: false, timeZone: 'America/Santiago' }));
+        const m = Number(d.toLocaleTimeString('es-CL', { minute: '2-digit', hour12: false, timeZone: 'America/Santiago' }));
+        return h * 60 + m;
+      };
 
-      const timeStr = d.toLocaleTimeString('es-CL', {
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: false,
-        timeZone: 'America/Santiago'
-      });
-      occupied_times.push(timeStr);
+      occupiedRanges.push({ start: getMins(dStart), end: getMins(dEnd) });
     }
   }
 
-  // Generar slots con aritmética pura (dayStart/dayEnd ya están en hora Chile)
-  // Evita el bug UTC donde new Date(`...T09:00:00`) = 06:00 Chile en Vercel
+  // 2. Generar slots con aritmética pura
   const available_slots: string[] = [];
   const pad = (n: number) => String(n).padStart(2, '0');
   const [startH, startM] = dayStart.split(':').map(Number);
@@ -160,24 +158,27 @@ export async function checkAvailability(
 
   const now = new Date();
   const todayChile = now.toLocaleDateString('en-CA', { timeZone: 'America/Santiago' });
-  const currentMinsChile = now.getHours() * 60 + now.getMinutes() - (now.getTimezoneOffset() === 0 ? 180 : 0); // Ajuste manual si el servidor está en UTC (Chile es UTC-3)
-
-  // Una forma más robusta de obtener minutos actuales en Chile:
   const nowChileStr = now.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/Santiago' });
   const [nowH, nowM] = nowChileStr.split(':').map(Number);
   const nowMinsChile = nowH * 60 + nowM;
 
   for (let mins = startMins; mins <= endMins - duration; mins += 30) {
-    const slot = `${pad(Math.floor(mins / 60))}:${pad(mins % 60)}`;
+    const slotMinsStart = mins;
+    const slotMinsEnd = mins + duration;
 
-    // 1. Verificar si está ocupado
-    if (occupied_times.includes(slot)) continue;
+    // Verificar si el slot solapa con cualquier rango ocupado
+    const isOccupied = occupiedRanges.some(range => {
+      return (slotMinsStart < range.end) && (slotMinsEnd > range.start);
+    });
 
-    // 2. Verificar anticipación mínima (si es hoy)
+    if (isOccupied) continue;
+
+    // 3. Verificar anticipación mínima (si es hoy)
     if (date === todayChile) {
       if (mins < nowMinsChile + (leadTimeHours * 60)) continue;
     }
 
+    const slot = `${pad(Math.floor(mins / 60))}:${pad(mins % 60)}`;
     available_slots.push(slot);
   }
 
