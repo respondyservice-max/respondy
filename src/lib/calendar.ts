@@ -11,6 +11,7 @@ export interface ParsedAppointment {
   time: string | null;   // formato HH:MM (24h)
   patientName: string | null;
   patientEmail: string | null;
+  bookingIntent?: boolean;
 }
 
 export interface AvailabilityResult {
@@ -132,7 +133,6 @@ export async function checkAvailability(
   let dayEndMins = 18 * 60;   // 18:00
 
   try {
-    const settingsRes = await calendar.settings.list();
     // Google Calendar Working Hours no está en la API pública de manera directa,
     // así que usamos el horario configurado en _config como fallback si existe
     if (config.day_start) {
