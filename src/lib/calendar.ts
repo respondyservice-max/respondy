@@ -411,7 +411,7 @@ export function createDynamicPrompt(
   } else if (wantsToBook) {
     nextStep = `El usuario quiere agendar ${collectedData?.service || 'una cita'}. GUÍA a elegir fecha/hora. ${availableSlots.length > 0 ? `Disponible: ${availableSlots.join(', ')}.` : ''}`;
   } else {
-    nextStep = `INFORMATIVO: El usuario está consultando. Responde sus dudas sobre ${collectedData?.service || 'servicios'}. NO presiones para agendar si no lo han pedido.`;
+    nextStep = `INFORMATIVO: El usuario está consultando sobre ${collectedData?.service || 'servicios'}. Responde sus dudas y usa tu personalidad para decidir si es oportuno invitar al agendamiento ahora o esperar a que el usuario lo pida.`;
   }
 
   return `
