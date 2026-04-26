@@ -137,7 +137,7 @@ export async function checkAvailability(
     if (start && end) {
       const dStart = new Date(start);
       const dEnd = new Date(end);
-      
+
       const getMins = (d: Date) => {
         const h = Number(d.toLocaleTimeString('es-CL', { hour: '2-digit', hour12: false, timeZone: 'America/Santiago' }));
         const m = Number(d.toLocaleTimeString('es-CL', { minute: '2-digit', hour12: false, timeZone: 'America/Santiago' }));
@@ -190,8 +190,8 @@ export async function checkAvailability(
     timeZone: 'America/Santiago',
   });
 
-  const occupied_times = occupiedRanges.map(r => 
-    `${String(Math.floor(r.start/60)).padStart(2,'0')}:${String(r.start%60).padStart(2,'0')}`
+  const occupied_times = occupiedRanges.map(r =>
+    `${String(Math.floor(r.start / 60)).padStart(2, '0')}:${String(r.start % 60).padStart(2, '0')}`
   );
 
   return {
@@ -402,28 +402,39 @@ export function createDynamicPrompt(
   const hasTime = !!collectedData?.time;
   const hasService = !!collectedData?.service;
   const wantsToBook = !!collectedData?.bookingIntent || (hasDate && hasTime);
-  const isReady = hasName && hasEmail && hasDate && hasTime && isSlotFree;
+  const isReady = hasName && hasEmail && hasDate && hasTime && !!isSlotFree;
 
-  // MÁQUINA DE ESTADOS - SOLO LÓGICA DE FLUJO
   let nextStep = '';
 
   if (isReady) {
-    nextStep = `CONFIRMAR CITA. El usuario es ${collectedData?.name}, para el ${collectedData?.date} a las ${collectedData?.time}. 
-    Misión: Confirma la cita. DEBES empezar tu respuesta con el símbolo ✓ (ej: ✓ Cita agendada...).`;
-  } else if (hasName && hasEmail && hasService && !hasDate) {
-    nextStep = `Ya tienes los datos del paciente. Ahora PREGUNTA qué día quiere venir. 
-    IMPORTANTE: No menciones horarios todavía. Solo pregunta por el día.`;
-  } else if (hasDate && !hasTime) {
-    nextStep = `El usuario quiere venir el ${collectedData?.date}. Muestra estos horarios reales: ${availableSlots.length > 0 ? availableSlots.join(', ') : 'No hay disponibles'}. 
-    Instrucción: Solo ofrece los horarios de esa lista. No inventes otros.`;
+    nextStep = `CONFIRMAR CITA: ${collectedData?.name}, ${collectedData?.date} a las ${collectedData?.time}.
+    DEBES empezar tu respuesta EXACTAMENTE con ✓ (ej: "✓ ¡Cita confirmada!...").`;
+
   } else if (hasDate && hasTime && !isSlotFree) {
-    nextStep = `La hora ${collectedData?.time} está ocupada. Ofrece estas alternativas: ${availableSlots.join(', ')}.`;
-  } else if (hasName && hasEmail && !hasService) {
-    nextStep = `Ya tienes nombre y email. Pregunta qué servicio necesita de los que ofreces.`;
-  } else if (wantsToBook && !hasName) {
-    nextStep = `El usuario quiere agendar. Pide su NOMBRE completo y su EMAIL para iniciar.`;
+    nextStep = `La hora ${collectedData?.time} no está disponible.
+    Ofrece SOLO estas alternativas reales: ${availableSlots.length > 0 ? availableSlots.join(', ') : 'No hay horarios disponibles ese día'}.
+    NO inventes otras horas.`;
+
+  } else if (hasDate && hasTime && isSlotFree && !hasName) {
+    nextStep = `Fecha y hora confirmadas (${collectedData?.date} a las ${collectedData?.time}).
+    Pide el NOMBRE COMPLETO del paciente.`;
+
+  } else if (hasDate && hasTime && isSlotFree && hasName && !hasEmail) {
+    nextStep = `Ya tienes nombre y fecha. Pide el EMAIL para enviar la confirmación.`;
+
+  } else if (hasDate && !hasTime) {
+    nextStep = `El usuario quiere el ${collectedData?.date}.
+    Muestra SOLO estos horarios disponibles: ${availableSlots.length > 0 ? availableSlots.join(', ') : 'No hay horarios disponibles ese día'}.
+    NO inventes horas. NO menciones horas que no estén en esa lista.`;
+
+  } else if (wantsToBook && !hasDate) {
+    nextStep = `El usuario quiere agendar${hasService ? ` (${collectedData?.service})` : ''}.
+    Pregunta qué DÍA le queda bien. No pidas más datos todavía.`;
+
   } else {
-    nextStep = `INFORMATIVO: Responde dudas sobre servicios. Si preguntan si haces algo, confirma y usa tu personalidad para invitar a agendar.`;
+    nextStep = `INFORMATIVO: Responde la pregunta del usuario sobre servicios o dudas generales.
+    Si confirma que quiere agendar, guíalo naturalmente.
+    NO pidas nombre ni email todavía.`;
   }
 
   return `
