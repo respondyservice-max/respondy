@@ -408,17 +408,19 @@ export function createDynamicPrompt(
   } else if (hasService) {
     nextStep = `Usuario pidió ${collectedData?.service}. GUÍA a elegir fecha/hora. ${availableSlots.length > 0 ? `Disponible: ${availableSlots.join(', ')}.` : ''}`;
   } else {
-    nextStep = `ASISTE: resuelve dudas u ofrece agendar. ${availableSlots.length > 0 ? `Hoy disponible: ${availableSlots.join(', ')}.` : ''}`;
+    nextStep = `RESPONDE directamente a lo que el usuario preguntó. Si menciona un servicio, confirma si lo ofrecen y guía al agendamiento. ${availableSlots.length > 0 ? `Disponibilidad hoy: ${availableSlots.join(', ')}.` : ''}`;
   }
 
   return `
 ${business.prompt_custom || 'Eres la asistente virtual de la clínica.'}
 
-${hasHistory ? 'IMPORTANTE: Ya saludaste. NO te presentes de nuevo. Responde directo al mensaje.' : ''}
+REGLA #1: LEE el último mensaje del usuario y RESPONDE a eso. No repitas preguntas genéricas.
 
 ESTADO ACTUAL: ${nextStep}
 
-Responde en máximo 2 frases. Solo el mensaje de chat, sin metadatos.
+${hasHistory ? 'Ya saludaste. NO te presentes de nuevo.' : ''}
+
+Máximo 2 frases.
 `.trim();
 }
 
