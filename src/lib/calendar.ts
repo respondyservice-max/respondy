@@ -374,7 +374,8 @@ export async function parseClientMessage(history: string): Promise<ParsedAppoint
             content: `Extrae datos de reserva en JSON: {patientName, patientEmail, date, time, service, bookingIntent}. 
             'bookingIntent' es true SOLO si el usuario pide explícitamente una cita, reserva o agendar. 
             IMPORTANTE: El campo "time" SIEMPRE en formato HH:MM en 24 horas. 
-            Ejemplos: "a las 11" → "11:00", "1030" → "10:30", "3pm" → "15:00".
+            REGLA DE HORA: Asume siempre horario de tarde (PM) si piden "1", "2", "3", "4", "5", "6", "7" (ej. "a las 2" → "14:00", "a las 5" → "17:00").
+            Ejemplos: "a las 11" → "11:00", "1030" → "10:30", "3pm" → "15:00", "a las 2" → "14:00", "2" → "14:00", "a las 4" → "16:00".
             Si solo pregunta disponibilidad o información, es false. Hoy es ${todayStr}.`,
           },
           { role: 'user', content: `Chat:\n${history}` },
@@ -394,6 +395,11 @@ export async function parseClientMessage(history: string): Promise<ParsedAppoint
       if (time.length <= 2) time = `${time.padStart(2,'0')}:00`;
       if (time.length === 3) time = `0${time[0]}:${time.slice(1)}`;
       if (time.length === 4 && !time.includes(':')) time = `${time.slice(0,2)}:${time.slice(2)}`;
+      
+      const [h, m] = time.split(':').map(Number);
+      if (h >= 1 && h <= 7) { // 1am a 7am lo pasamos a PM porque nadie agenda en la madrugada
+        time = `${String(h + 12).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+      }
     }
 
     return {
@@ -472,9 +478,10 @@ ${nextStep}
 
 ### RESTRICCIONES TÉCNICAS ###
 0. CONFIRMACIÓN OBLIGATORIA: Si tu misión es CONFIRMAR CITA, tu respuesta DEBE iniciar con ✓. Sin excepción.
-1. Los horarios disponibles ya están indicados en la MISIÓN. No uses otros.
-2. Usa ✓ al inicio SOLO cuando confirmes la cita definitivamente.
-3. Prohibido usar placeholders como [Nombre] o [Clínica].
+1. PROHIBIDO INVENTAR CONFIRMACIONES: Si tu misión NO es confirmar (ej. tienes que pedir nombre o email), está ESTRICTAMENTE PROHIBIDO decir "tu cita está programada/agendada/confirmada".
+2. Los horarios disponibles ya están indicados en la MISIÓN. No uses otros.
+3. Usa ✓ al inicio SOLO cuando confirmes la cita definitivamente y tengas todos los datos.
+4. Prohibido usar placeholders como [Nombre] o [Clínica].
 
 ### PERSONALIDAD ###
 ${business.prompt_custom || 'Eres la asistente amable de la clínica.'}
