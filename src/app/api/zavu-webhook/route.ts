@@ -40,17 +40,18 @@ export async function POST(request: NextRequest) {
 
     await new Promise(r => setTimeout(r, 1000));
 
-    // 2. OBTENER HISTORIAL (Ordenado por timestamp para evitar el caos de los UUIDs)
+    // 2. OBTENER HISTORIAL (Traemos los últimos 20 y luego los invertimos)
     const { data: history, error: hErr } = await supabaseAdmin
       .from('conversations')
       .select('message_type, message_text, timestamp')
       .eq('phone_from', normalizedPhone)
-      .order('timestamp', { ascending: true })
+      .order('timestamp', { ascending: false }) // Trae los más RECIENTES primero
       .limit(20);
 
     if (hErr) console.error('❌ Error Supabase History:', hErr);
 
-    const historyArray = history || [];
+    // Los invertimos para que queden: [viejo, ..., nuevo] para la IA
+    const historyArray = (history || []).reverse();
     
     console.log('📋 HISTORIAL RECUPERADO:', {
       count: historyArray.length,
