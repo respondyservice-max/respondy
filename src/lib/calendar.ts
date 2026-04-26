@@ -190,6 +190,10 @@ export async function checkAvailability(
     timeZone: 'America/Santiago',
   });
 
+  const occupied_times = occupiedRanges.map(r => 
+    `${String(Math.floor(r.start/60)).padStart(2,'0')}:${String(r.start%60).padStart(2,'0')}`
+  );
+
   return {
     requested_slot: null,
     is_available: available_slots.length > 0,
@@ -220,7 +224,7 @@ export async function createCalendarEvent(
 
     const config = business.weekly_schedule?._config || {};
     const duration = params.durationMinutes || config.appointment_duration || business.appointment_duration || 45;
-    const srvName = config.service_name || business.service_name || params.service || 'Consulta';
+    const srvName = params.service || config.service_name || business.service_name || 'Consulta';
     const srvDesc = config.service_description || business.service_description || '';
     const startDateTime = new Date(`${params.date}T${params.time}:00`);
     const { data: event } = await calendar.events.insert({
@@ -440,11 +444,7 @@ ${business.prompt_custom || 'Eres la asistente amable de la clínica.'}
 // ─── 6. Detectar si el bot confirmó, canceló o reagendó ───────────────────
 
 export function extractConfirmation(botResponse: string): boolean {
-  const lower = botResponse.toLowerCase();
-  return lower.includes('✓') || 
-         lower.includes('cita agendada') || 
-         lower.includes('cita confirmada') ||
-         lower.includes('reservada');
+  return botResponse.trimStart().startsWith('✓');
 }
 
 export function extractCancellation(botResponse: string): string | null {
