@@ -10,6 +10,7 @@ export interface ParsedAppointment {
   date: string | null;   // formato YYYY-MM-DD
   time: string | null;   // formato HH:MM (24h)
   patientName: string | null;
+  patientEmail: string | null;
 }
 
 export interface AvailabilityResult {
@@ -330,13 +331,8 @@ export async function updateCalendarEvent(
 
 // ─── 5. Parsear mensaje del cliente con IA (GROQ) ─────────────────────────
 
-export async function parseClientMessage(history: string): Promise<{
-  date: string | null;
-  time: string | null;
-  patientName: string | null;
-  service: string | null;
-}> {
-  if (!process.env.GROQ_API_KEY) return { date: null, time: null, patientName: null, service: null };
+export async function parseClientMessage(history: string): Promise<ParsedAppointment> {
+  if (!process.env.GROQ_API_KEY) return { date: null, time: null, patientName: null, patientEmail: null, service: null };
 
   try {
     const today = new Date();
@@ -346,27 +342,13 @@ export async function parseClientMessage(history: string): Promise<{
     });
     const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
-      },
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.GROQ_API_KEY}` },
       body: JSON.stringify({
         model: 'llama-3.1-8b-instant',
         messages: [
           {
             role: 'system',
-            content: `Eres un extractor técnico de datos para una clínica dental. Hoy es ${todayStr}.
-            
-            Tu misión es extraer: patientName, date (YYYY-MM-DD), time (HH:mm) y service.
-            
-            REGLAS DE ORO:
-            1. PRIORIDAD RECIENTE: El mensaje más RECIENTE es el que manda. Si antes dijo "Pedro" y ahora dice "Juan", el nombre es "Juan".
-            2. ANALIZA TODO EL HISTORIAL: Usa el historial para resolver fechas como "mañana" o "el lunes".
-            3. PERSISTENCIA: Si un dato ya fue mencionado y no ha sido contradicho, mantenlo.
-            4. HORAS: 1-7 son PM (tarde), 8-12 son AM (mañana).
-            5. SOLO EXTRAE LO QUE ESTÉ ESCRITO: No inventes nombres si no los ves en el texto.
-            
-            Solo devuelve un objeto JSON puro: {"patientName": string, "date": string, "time": string, "service": string}`,
+            content: `Extrae datos de reserva en JSON: {patientName, patientEmail, date, time, service}. Hoy es ${todayStr}. Prioriza lo más reciente.`,
           },
           { role: 'user', content: `Chat:\n${history}` },
         ],
@@ -399,65 +381,35 @@ export function createDynamicPrompt(
   upcomingAppointments: any[] = [],
   collectedData?: { name?: string | null; email?: string | null; date?: string | null; time?: string | null; service?: string | null }
 ): string {
-  const currentDate = new Date().toLocaleDateString('es-CL', {
-    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
-    timeZone: 'America/Santiago'
-  });
-
-  const hasName = !!collectedData?.name && collectedData.name.trim().length > 0;
-  const hasEmail = !!collectedData?.email && collectedData.email.includes('@');
-  const hasDate = !!collectedData?.date;
-  const hasTime = !!collectedData?.time;
-
-  // 1. FICHA TÉCNICA (ESTADO ABSOLUTO)
   const availableSlots = availability?.available_slots || [];
   const cleanRequestedTime = requestedSlot?.time?.trim();
   const isSlotFree = cleanRequestedTime && availableSlots.includes(cleanRequestedTime);
-  const allDataReady = hasName && hasEmail && hasDate && hasTime && isSlotFree;
+  
+  const hasName = !!collectedData?.name;
+  const hasEmail = !!collectedData?.email;
+  const hasDate = !!collectedData?.date;
+  const hasTime = !!collectedData?.time;
+  const isReady = hasName && hasEmail && hasDate && hasTime && isSlotFree;
 
-  // Si no hay fecha, no podemos decir "Sin cupos", debemos pedir la fecha.
-  const availableText = !hasDate ? 'Pendiente determinar fecha' : (availableSlots.length > 0 ? availableSlots.join(', ') : 'Sin cupos para este día');
-
-  const statusMemo = `
-### MEMORIA INTERNA - NO REPETIR ###
-- PACIENTE: ${collectedData?.name || 'DESCONOCIDO'}
-- EMAIL: ${collectedData?.email || 'PENDIENTE'}
-- FECHA: ${collectedData?.date || 'PENDIENTE'}
-- HORA: ${collectedData?.time || 'PENDIENTE'}
-- CALENDAR: ${isSlotFree ? '✅ LIBRE' : '❌ OCUPADA/PENDIENTE'}
-###################################
-`;
-
-  let flowInstruction = '';
-  if (allDataReady) {
-    flowInstruction = `ORDEN: CONFIRMA AHORA. Responde exactamente: "✓ Cita agendada. Paciente: ${collectedData!.name}, Email: ${collectedData!.email}, Día: ${collectedData!.date}, Hora: ${collectedData!.time}, Servicio: ${collectedData?.service || 'Consulta'}."`;
-  } else if (hasName && hasDate && hasTime && isSlotFree && !hasEmail) {
-    flowInstruction = `ORDEN: Ya tienes nombre, fecha y hora. AHORA PIDE EL CORREO ELECTRÓNICO educadamente para enviar la confirmación.`;
+  let instructions = '';
+  if (isReady) {
+    instructions = `TODO LISTO: Confirma la cita con estos datos: Nombre: ${collectedData?.name}, Email: ${collectedData?.email}, Día: ${collectedData?.date}, Hora: ${collectedData?.time}. Responde exactamente: "✓ Cita agendada. Paciente: ${collectedData?.name}, Email: ${collectedData?.email}, Día: ${collectedData?.date}, Hora: ${collectedData?.time}, Servicio: ${collectedData?.service || 'Consulta'}."`;
+  } else if (hasDate && hasTime && isSlotFree) {
+    instructions = `DATOS FALTANTES: Ya tienes fecha y hora. AHORA pídele al usuario su Nombre y Email para completar la reserva. No confirmes sin estos dos datos personales.`;
   } else if (hasDate && hasTime && !isSlotFree) {
-    flowInstruction = `ORDEN: La hora ${collectedData?.time} está ocupada para el ${collectedData?.date}. Ofrece solo estas: ${availableText}.`;
-  } else if (!hasName) {
-    flowInstruction = `ORDEN: Pregunta el nombre del paciente. Sé breve.`;
-  } else if (!hasDate) {
-    flowInstruction = `ORDEN: Pregunta qué día busca agendar.`;
-  } else if (!hasTime) {
-    flowInstruction = `ORDEN: Pregunta qué hora le acomoda para el ${collectedData?.date}. Opciones: ${availableText}`;
+    instructions = `HORA OCUPADA: La hora ${collectedData?.time} no está disponible para el ${collectedData?.date}. Opciones libres: ${availableSlots.join(', ')}.`;
   } else {
-    flowInstruction = `ORDEN: Pide lo que falta para agendar. Disponibilidad: ${availableText}`;
+    instructions = `FLUJO NATURAL: Resuelve dudas o ayuda al usuario a elegir un día y hora. NO pidas el nombre ni el email hasta que el usuario haya elegido una hora disponible. Disponibilidad hoy: ${availableSlots.join(', ')}`;
   }
 
-  const config = business.weekly_schedule?._config || {};
-  const isConversational = config.prompt_mode === 'conversacional';
-
   return `
-${business.prompt_custom || 'Eres el asistente de Clínica Smile.'}
-${statusMemo}
+${business.prompt_custom || 'Eres la asistente de Clínica Smile.'}
 
-${flowInstruction}
-
-REGLAS DE RESPUESTA:
-1. Sé amable pero ve directo al punto.
-2. ${isConversational ? 'Puedes charlar brevemente antes de agendar si el usuario hace preguntas.' : 'Prioriza agendar lo antes posible.'}
-3. PROHIBICIÓN CRÍTICA: NUNCA escribas el texto que está entre ###. Es solo para tu memoria interna.
+REGLAS PRAGMÁTICAS:
+1. Chatea con naturalidad. NO repitas tu nombre en cada mensaje.
+2. NO pidas el nombre ni el correo al principio. Solo pídelos cuando el usuario ya haya elegido una fecha y hora disponible.
+3. ${instructions}
+4. Sé breve. Respuestas de máximo 2 frases.
 `.trim();
 }
 

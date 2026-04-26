@@ -86,7 +86,7 @@ export async function POST(request: NextRequest) {
       } else {
         const { data: i } = await supabaseAdmin.from('appointments').insert({
           business_id: targetBusiness.id, patient_phone: normalizedPhone,
-          patient_name: parsed.patientName || 'Paciente', status: 'draft',
+          patient_name: parsed.patientName || null, status: 'draft',
           patient_email: parsed.patientEmail || null,
           service: parsed.service || null,
           date_time: (fDate && fTime) ? new Date(`${fDate}T${fTime}:00`).toISOString() : null
@@ -95,7 +95,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const finalName = parsed.patientName || sessionAppt?.patient_name || null;
+    const finalName = parsed.patientName || (sessionAppt?.patient_name !== 'Paciente' ? sessionAppt?.patient_name : null) || null;
     const finalEmail = parsed.patientEmail || sessionAppt?.patient_email || null;
     const finalDateStr = parsed.date || (sessionAppt?.date_time ? sessionAppt.date_time.split('T')[0] : null);
     const finalTimeStr = parsed.time || (sessionAppt?.date_time ? sessionAppt.date_time.split('T')[1].substring(0, 5) : null);
