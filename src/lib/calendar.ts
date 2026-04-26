@@ -372,6 +372,7 @@ export async function parseClientMessage(history: string): Promise<ParsedAppoint
           {
             role: 'system',
             content: `Extrae datos de reserva en JSON: {patientName, patientEmail, date, time, service, bookingIntent}. 
+            REGLA VITAL: DEBES EXTRAER LA INFORMACIÓN MÁS RECIENTE del chat. Si el usuario cambia de hora o fecha en el último mensaje, extrae esa NUEVA hora o fecha, ignorando las anteriores.
             'bookingIntent' es true SOLO si el usuario pide explícitamente una cita, reserva o agendar. 
             IMPORTANTE: El campo "time" SIEMPRE en formato HH:MM en 24 horas. 
             REGLA DE HORA: Asume siempre horario de tarde (PM) si piden "1", "2", "3", "4", "5", "6", "7" (ej. "a las 2" → "14:00", "a las 5" → "17:00").
