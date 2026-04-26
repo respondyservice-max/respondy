@@ -156,7 +156,8 @@ export async function POST(request: NextRequest) {
         model: 'llama-3.1-8b-instant',
         messages: [
           { role: 'system', content: dynamicPrompt },
-          ...historyArray.map(m => ({ role: m.message_type === 'incoming' ? 'user' : 'assistant', content: m.message_text }))
+          ...historyArray.map(m => ({ role: m.message_type === 'incoming' ? 'user' : 'assistant', content: m.message_text })),
+          { role: 'system', content: `[RECORDATORIO ESTRICTO] Revisa la "MISIÓN ACTUAL" del prompt inicial y CUMPLELA AL PIE DE LA LETRA. Si la misión indica que debes confirmar con el símbolo ✓, úsalo como el PRIMER CARÁCTER de tu respuesta o el sistema fallará.` }
         ],
         temperature: 0.3
       }),
