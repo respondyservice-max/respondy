@@ -405,7 +405,8 @@ export function createDynamicPrompt(
   if (!availability && wantsToBook) {
     nextStep = `ASISTE: El usuario quiere agendar pero no hay disponibilidad cargada. Explica y ayuda.`;
   } else if (isReady) {
-    nextStep = `CONFIRMAR cita: ${collectedData?.name}, ${collectedData?.date} ${collectedData?.time}. Muestra ticket.`;
+    nextStep = `CONFIRMAR cita: ${collectedData?.name}, ${collectedData?.date} ${collectedData?.time}. 
+    IMPORTANTE: Para grabar la cita en el sistema DEBES incluir el símbolo ✓ al inicio de tu confirmación (Ej: ✓ Cita agendada para el martes...).`;
   } else if (hasDate && hasTime && isSlotFree) {
     nextStep = `Tienes fecha/hora. RECOPILA: nombre y email.`;
   } else if (hasDate && hasTime && !isSlotFree) {
@@ -436,9 +437,10 @@ Responde siempre en máximo 2 frases cortas.
 
 export function extractConfirmation(botResponse: string): boolean {
   const lower = botResponse.toLowerCase();
-  return lower.includes('✓ cita agendada') ||
-    lower.includes('cita agendada para el') ||
-    lower.includes('cita confirmada');
+  return lower.includes('✓') || 
+         lower.includes('cita agendada') || 
+         lower.includes('cita confirmada') ||
+         lower.includes('reservada');
 }
 
 export function extractCancellation(botResponse: string): string | null {
