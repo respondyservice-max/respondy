@@ -1,5 +1,5 @@
 export const dynamic = "force-dynamic";
-// app/api/zavu-webhook/route.ts - VERSIÓN FINAL CON HISTORIAL ARREGLADO
+// app/api/zavu-webhook/route.ts - VERSIÓN FINAL CON CORREO OBLIGATORIO Y TICKET MEJORADO
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { decrypt } from '@/lib/crypto';
@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
       }
     }
     if (!targetBusiness) return NextResponse.json({ error: 'Business no encontrado' }, { status: 404 });
-    
+
     const normalizedPhone = phoneFrom.replace('+', '');
 
     // ── 0. FILTRO DE BLOQUEO ──
@@ -48,29 +48,41 @@ export async function POST(request: NextRequest) {
       message_text: messageText,
     });
 
-    if (insertResult.error) console.error('❌ Error guardando mensaje:', insertResult.error);
+    console.log('💾 INSERT resultado:', {
+      error: insertResult.error,
+      normalizedPhone,
+      messageText
+    });
 
     await new Promise(resolve => setTimeout(resolve, 1000));
 
-    // ── 2. OBTENER HISTORIAL (Usando ID para evitar fallo de created_at) ──
+    // ── 2. OBTENER HISTORIAL (20 mensajes) ──
     const { data: previousMessages, error: historyError } = await supabaseAdmin
       .from('conversations').select('message_type, message_text')
       .eq('business_id', targetBusiness.id).eq('phone_from', normalizedPhone)
-      .order('id', { ascending: false }).limit(20);
+      .order('created_at', { ascending: false }).limit(20);
 
     if (historyError) console.error('❌ Error obteniendo historial:', historyError);
 
     const historyArray = (previousMessages || []).reverse();
+
+    console.log('📋 HISTORIAL SUPABASE:', {
+      previousMessages: previousMessages?.length,
+      historyArray: historyArray.length,
+      phone: normalizedPhone,
+      businessId: targetBusiness.id
+    });
+
     const historyText = historyArray.map(m => `${m.message_type === 'incoming' ? 'Usuario' : 'Asistente'}: ${m.message_text}`).join('\n');
-    
+
     // ── 3. PARSEAR DATOS ──
     const parsed = await parseClientMessage(`${historyText}\nUsuario: ${messageText}`);
-    
+
     // ── 4. SINCRONIZAR CON BORRADOR ──
-    // Eliminamos gte('created_at') por si la columna no existe en esta tabla también
+    const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
     let { data: sessionData } = await supabaseAdmin
       .from('appointments').select('*').eq('business_id', targetBusiness.id).eq('patient_phone', normalizedPhone)
-      .eq('status', 'draft').order('id', { ascending: false }).limit(1);
+      .eq('status', 'draft').gte('created_at', fifteenMinsAgo).order('created_at', { ascending: false }).limit(1);
 
     let sessionAppt = sessionData?.[0];
 
@@ -79,21 +91,30 @@ export async function POST(request: NextRequest) {
       if (parsed.patientName) updateData.patient_name = parsed.patientName;
       if (parsed.patientEmail) updateData.patient_email = parsed.patientEmail;
       if (parsed.service) updateData.service = parsed.service;
-      
+
       let fDate = parsed.date || (sessionAppt?.date_time ? sessionAppt.date_time.split('T')[0] : null);
       let fTime = parsed.time || (sessionAppt?.date_time ? sessionAppt.date_time.split('T')[1].substring(0, 5) : null);
-      if (fDate && fTime) updateData.date_time = new Date(`${fDate}T${fTime}:00`).toISOString();
+      
+      if (fDate && fTime) {
+        const d = new Date(`${fDate}T${fTime}:00`);
+        if (!isNaN(d.getTime())) updateData.date_time = d.toISOString();
+      }
 
       if (sessionAppt) {
         const { data: u } = await supabaseAdmin.from('appointments').update(updateData).eq('id', sessionAppt.id).select();
         sessionAppt = u?.[0];
       } else {
+        let finalISO = null;
+        if (fDate && fTime) {
+          const d = new Date(`${fDate}T${fTime}:00`);
+          if (!isNaN(d.getTime())) finalISO = d.toISOString();
+        }
         const { data: i } = await supabaseAdmin.from('appointments').insert({
           business_id: targetBusiness.id, patient_phone: normalizedPhone,
           patient_name: parsed.patientName || null, status: 'draft',
           patient_email: parsed.patientEmail || null,
           service: parsed.service || null,
-          date_time: (fDate && fTime) ? new Date(`${fDate}T${fTime}:00`).toISOString() : null
+          date_time: finalISO
         }).select();
         sessionAppt = i?.[0];
       }
@@ -113,24 +134,39 @@ export async function POST(request: NextRequest) {
 
     const { data: upcoming } = await supabaseAdmin.from('appointments').select('*').eq('business_id', targetBusiness.id).gte('date_time', new Date().toISOString()).ilike('patient_phone', `%${normalizedPhone}%`);
 
+    // Contar solo mensajes del BOT. Si es 0, es el primer turno → debe saludar.
     const botMessageCount = historyArray.filter(m => m.message_type === 'outgoing').length;
 
+    console.log('🔍 DEBUG createDynamicPrompt:', {
+      totalMessages: historyArray.length,
+      botMessageCount,
+      hasHistory: botMessageCount > 0,
+    });
+
     const dynamicPrompt = createDynamicPrompt(
-      targetBusiness, 
-      availability, 
-      (finalDateStr && finalTimeStr) ? { date: finalDateStr, time: finalTimeStr } : null, 
-      upcoming || [], 
+      targetBusiness,
+      availability,
+      (finalDateStr && finalTimeStr) ? { date: finalDateStr, time: finalTimeStr } : null,
+      upcoming || [],
       { name: finalName, email: finalEmail, date: finalDateStr, time: finalTimeStr, service: finalService },
       botMessageCount
     );
-    
+
+    console.log('📨 MENSAJES A GROQ:', JSON.stringify([
+      { role: 'system', content: dynamicPrompt },
+      ...historyArray.slice(-15).map(m => ({
+        role: m.message_type === 'incoming' ? 'user' : 'assistant',
+        content: m.message_text
+      }))
+    ], null, 2));
+
     const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.GROQ_API_KEY}` },
-      body: JSON.stringify({ 
-        model: 'llama-3.1-8b-instant', 
-        messages: [{ role: 'system', content: dynamicPrompt }, ...historyArray.slice(-15).map(m => ({ role: m.message_type === 'incoming' ? 'user' : 'assistant', content: m.message_text }))], 
-        temperature: 0.4 
+      body: JSON.stringify({
+        model: 'llama-3.1-8b-instant',
+        messages: [{ role: 'system', content: dynamicPrompt }, ...historyArray.slice(-15).map(m => ({ role: m.message_type === 'incoming' ? 'user' : 'assistant', content: m.message_text }))],
+        temperature: 0.4
       }),
     });
     const groqData = await groqRes.json();
@@ -144,8 +180,11 @@ export async function POST(request: NextRequest) {
     if (reag && upcoming) {
       const a = upcoming.find(x => x.id === reag.id);
       if (a && reag.date && reag.time) {
-        if (a.google_event_id) await updateCalendarEvent(targetBusiness, a.google_event_id, reag.date, reag.time);
-        await supabaseAdmin.from('appointments').update({ date_time: new Date(`${reag.date}T${reag.time}:00`).toISOString() }).eq('id', a.id);
+        const newD = new Date(`${reag.date}T${reag.time}:00`);
+        if (!isNaN(newD.getTime())) {
+          if (a.google_event_id) await updateCalendarEvent(targetBusiness, a.google_event_id, reag.date, reag.time);
+          await supabaseAdmin.from('appointments').update({ date_time: newD.toISOString() }).eq('id', a.id);
+        }
       }
     } else if (canc && upcoming) {
       const a = upcoming.find(x => x.id === canc);
@@ -153,22 +192,22 @@ export async function POST(request: NextRequest) {
       if (a) await supabaseAdmin.from('appointments').delete().eq('id', a.id);
     } else if (conf) {
       let fD = finalDateStr, fT = finalTimeStr, fN = finalName, fS = finalService, fE = finalEmail;
-      if (!fD || !fT || !fN || !fS || !fE) { 
-        const bP = await parseClientMessage(botResponse); 
+      if (!fD || !fT || !fN || !fS || !fE) {
+        const bP = await parseClientMessage(botResponse);
         fD = fD || bP.date; fT = fT || bP.time; fN = fN || bP.patientName; fS = fS || bP.service; fE = fE || bP.patientEmail;
       }
-      
+
       if (fD && fT && fN && fE) {
         const config = targetBusiness.weekly_schedule?._config || {};
         const sList = config.services_list || [];
-        const sData = sList.find((s: any) => 
+        const sData = sList.find((s: any) =>
           s.name.toLowerCase().trim() === (fS || '').toLowerCase().trim() ||
           (fS || '').toLowerCase().includes(s.name.toLowerCase()) ||
           s.name.toLowerCase().includes((fS || '').toLowerCase())
         );
         const isVideo = sData?.isVideo || false;
 
-        const eventRes = await createCalendarEvent(targetBusiness, { 
+        const eventRes = await createCalendarEvent(targetBusiness, {
           patientName: fN, patientPhone: normalizedPhone, patientEmail: fE, service: sData?.name || fS || 'Consulta', date: fD, time: fT, includeVideoCall: isVideo
         });
 
