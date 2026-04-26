@@ -438,6 +438,10 @@ export function createDynamicPrompt(
   const wantsToBook = !!collectedData?.bookingIntent || (hasDate && hasTime);
   const isReady = hasName && hasEmail && hasDate && hasTime && !!isSlotFree;
 
+  const suggestedSlots = availability?.suggested_alternatives?.length 
+    ? availability.suggested_alternatives 
+    : availableSlots.slice(0, 4);
+
   let nextStep = '';
 
   if (isReady) {
@@ -448,8 +452,8 @@ export function createDynamicPrompt(
 
   } else if (hasDate && hasTime && !isSlotFree) {
     nextStep = `La hora ${collectedData?.time} no está disponible.
-    Ofrece SOLO estas alternativas reales: ${availableSlots.length > 0 ? availableSlots.join(', ') : 'No hay horarios disponibles ese día'}.
-    NO inventes otras horas.`;
+    Ofrece SOLO estas alternativas reales: ${suggestedSlots.length > 0 ? suggestedSlots.join(', ') : 'No hay horarios disponibles ese día'}.
+    IMPORTANTE: Enumera la lista EXACTA de alternativas, no abrevies ni resumas.`;
 
   } else if (hasDate && hasTime && isSlotFree && !hasName) {
     nextStep = `Fecha y hora confirmadas (${collectedData?.date} a las ${collectedData?.time}).
@@ -460,8 +464,8 @@ export function createDynamicPrompt(
 
   } else if (hasDate && !hasTime) {
     nextStep = `El usuario quiere el ${collectedData?.date}.
-    Muestra SOLO estos horarios disponibles: ${availableSlots.length > 0 ? availableSlots.join(', ') : 'No hay horarios disponibles ese día'}.
-    NO inventes horas. NO menciones horas que no estén en esa lista.`;
+    Muestra SOLO estos horarios disponibles: ${suggestedSlots.length > 0 ? suggestedSlots.join(', ') : 'No hay horarios disponibles ese día'}.
+    IMPORTANTE: Enumera la lista EXACTA de alternativas, no abrevies ni resumas.`;
 
   } else if (wantsToBook && !hasDate) {
     nextStep = `El usuario quiere agendar${hasService ? ` (${collectedData?.service})` : ''}.
