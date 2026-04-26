@@ -112,6 +112,12 @@ export async function checkAvailability(
 
   // Consultar el día completo en UTC para no perder eventos por offset de zona horaria
   const nextDate = new Date(`${date}T00:00:00Z`);
+  if (isNaN(nextDate.getTime())) {
+    return {
+      requested_slot: null, is_available: false, occupied_times: [], available_slots: [], suggested_alternatives: [],
+      date_label: 'Fecha no válida'
+    };
+  }
   nextDate.setUTCDate(nextDate.getUTCDate() + 1);
   const { data } = await calendar.events.list({
     calendarId: business.google_calendar_id || 'primary',
@@ -252,17 +258,19 @@ export async function createCalendarEvent(
     const meetLink = event.conferenceData?.entryPoints?.find(ep => ep.entryPointType === 'video')?.uri || null;
 
     // Guardar en tabla appointments
-    await supabaseAdmin.from('appointments').insert({
-      business_id: business.id,
-      patient_name: params.patientName,
-      patient_phone: params.patientPhone,
-      patient_email: params.patientEmail || null,
-      service: params.service,
-      date_time: startDateTime.toISOString(),
-      google_event_id: event.id,
-      meet_link: meetLink,
-      status: 'confirmed',
-    });
+    if (!isNaN(startDateTime.getTime())) {
+      await supabaseAdmin.from('appointments').insert({
+        business_id: business.id,
+        patient_name: params.patientName,
+        patient_phone: params.patientPhone,
+        patient_email: params.patientEmail || null,
+        service: params.service,
+        date_time: startDateTime.toISOString(),
+        google_event_id: event.id,
+        meet_link: meetLink,
+        status: 'confirmed',
+      });
+    }
 
     return {
       success: true,
