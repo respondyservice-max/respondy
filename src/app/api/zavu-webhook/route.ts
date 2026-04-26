@@ -142,7 +142,16 @@ export async function POST(request: NextRequest) {
     });
 
     const groqData = await groqRes.json();
-    const botResponse = (groqData.choices?.[0]?.message?.content || 'Error técnico.').trim();
+    
+    if (!groqRes.ok) {
+      console.error('❌ ERROR GROQ:', {
+        status: groqRes.status,
+        data: groqData,
+        promptSnippet: dynamicPrompt.substring(0, 100)
+      });
+    }
+
+    const botResponse = (groqData.choices?.[0]?.message?.content || 'Error técnico de conexión con IA.').trim();
 
     // 7. ACCIONES Y ENVÍO
     const conf = extractConfirmation(botResponse);
