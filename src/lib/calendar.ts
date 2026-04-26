@@ -372,15 +372,16 @@ export async function parseClientMessage(history: string): Promise<ParsedAppoint
   }
 }
 
-// ─── 5. Crear prompt dinámico con Arquitectura Separada y Seguridad ─────────
-
 export function createDynamicPrompt(
   business: any,
   availability: AvailabilityResult | null,
   requestedSlot: { date: string; time: string | null } | null,
   upcomingAppointments: any[] = [],
-  collectedData?: { name?: string | null; email?: string | null; date?: string | null; time?: string | null; service?: string | null }
+  collectedData?: { name?: string | null; email?: string | null; date?: string | null; time?: string | null; service?: string | null },
+  historyLength?: number
 ): string {
+  
+  const hasHistory = historyLength && historyLength > 0;
   const availableSlots = availability?.available_slots || [];
   const cleanRequestedTime = requestedSlot?.time?.trim();
   const isSlotFree = cleanRequestedTime && availableSlots.includes(cleanRequestedTime);
@@ -392,32 +393,28 @@ export function createDynamicPrompt(
   const hasService = !!collectedData?.service;
   const isReady = hasName && hasEmail && hasDate && hasTime && isSlotFree;
 
-  // Lógica técnica (Invisible y confidencial)
-  let stateMachine = '';
+  // MÁQUINA DE ESTADOS - SOLO LÓGICA DE FLUJO
+  let nextStep = '';
   if (isReady) {
-    stateMachine = `[ACCION: CONFIRMAR] Cita lista: ${collectedData?.name}, ${collectedData?.email}, ${collectedData?.date} ${collectedData?.time}. Confirma y muestra el ticket.`;
+    nextStep = `CONFIRMAR cita: ${collectedData?.name}, ${collectedData?.date} ${collectedData?.time}. Muestra ticket.`;
   } else if (hasDate && hasTime && isSlotFree) {
-    stateMachine = `[ACCION: PEDIR_DATOS] Tienes fecha y hora. Pide Nombre y Email para cerrar.`;
+    nextStep = `Tienes fecha/hora. RECOPILA: nombre y email.`;
   } else if (hasDate && hasTime && !isSlotFree) {
-    stateMachine = `[ACCION: HORA_OCUPADA] La hora ${collectedData?.time} está ocupada. Ofrece: ${availableSlots.join(', ')}.`;
+    nextStep = `Hora ocupada. OFRECE: ${availableSlots.join(', ')}.`;
   } else if (hasService) {
-    stateMachine = `[ACCION: AGENDAR_CITA] El usuario ya pidió ${collectedData?.service}. Reconócelo y guíalo a elegir una fecha y hora. Disponibilidad: ${availableSlots.join(', ')}.`;
+    nextStep = `Usuario pidió ${collectedData?.service}. GUÍA a elegir fecha/hora. Disponible: ${availableSlots.join(', ')}.`;
   } else {
-    stateMachine = `[ACCION: ASISTIR] Resuelve dudas y ofrece agendar. Disponibilidad hoy: ${availableSlots.join(', ')}.`;
+    nextStep = `ASISTE: resuelve dudas u ofrece agendar. Hoy disponible: ${availableSlots.join(', ')}.`;
   }
 
   return `
-### INSTRUCCIONES TÉCNICAS (CONFIDENCIAL) ###
-1. REGLA DE NO REPETICIÓN: Si el historial muestra que YA saludaste, NO digas "Hola" ni te presentes de nuevo. Ve directo a la respuesta.
-2. CONTINUIDAD: Responde directamente a lo que el usuario acaba de decir.
-3. ESTADO ACTUAL: ${stateMachine}
-4. BREVEDAD: Máximo 2 frases.
-
-### PERSONALIDAD DEL ASISTENTE ###
 ${business.prompt_custom || 'Eres la asistente virtual de la clínica.'}
 
-### REGLA FINAL ###
-Responde SOLO con el mensaje de chat. Sin metadatos.
+${hasHistory ? 'IMPORTANTE: Ya saludaste. NO te presentes de nuevo. Responde directo al mensaje.' : ''}
+
+ESTADO ACTUAL: ${nextStep}
+
+Responde en máximo 2 frases. Solo el mensaje de chat, sin metadatos.
 `.trim();
 }
 

@@ -109,7 +109,14 @@ export async function POST(request: NextRequest) {
 
     const { data: upcoming } = await supabaseAdmin.from('appointments').select('*').eq('business_id', targetBusiness.id).gte('date_time', new Date().toISOString()).ilike('patient_phone', `%${normalizedPhone}%`);
 
-    const dynamicPrompt = createDynamicPrompt(targetBusiness, availability, (finalDateStr && finalTimeStr) ? { date: finalDateStr, time: finalTimeStr } : null, upcoming || [], { name: finalName, email: finalEmail, date: finalDateStr, time: finalTimeStr, service: finalService });
+    const dynamicPrompt = createDynamicPrompt(
+      targetBusiness, 
+      availability, 
+      (finalDateStr && finalTimeStr) ? { date: finalDateStr, time: finalTimeStr } : null, 
+      upcoming || [], 
+      { name: finalName, email: finalEmail, date: finalDateStr, time: finalTimeStr, service: finalService },
+      historyArray.length
+    );
     
     const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
