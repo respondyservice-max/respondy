@@ -109,13 +109,22 @@ export async function POST(request: NextRequest) {
 
     const { data: upcoming } = await supabaseAdmin.from('appointments').select('*').eq('business_id', targetBusiness.id).gte('date_time', new Date().toISOString()).ilike('patient_phone', `%${normalizedPhone}%`);
 
+    // Contar solo mensajes del BOT. Si es 0, es el primer turno → debe saludar.
+    const botMessageCount = historyArray.filter(m => m.message_type === 'outgoing').length;
+
+    console.log('🔍 DEBUG createDynamicPrompt:', {
+      totalMessages: historyArray.length,
+      botMessageCount,
+      hasHistory: botMessageCount > 0,
+    });
+
     const dynamicPrompt = createDynamicPrompt(
       targetBusiness, 
       availability, 
       (finalDateStr && finalTimeStr) ? { date: finalDateStr, time: finalTimeStr } : null, 
       upcoming || [], 
       { name: finalName, email: finalEmail, date: finalDateStr, time: finalTimeStr, service: finalService },
-      historyArray.length
+      botMessageCount  // ← Solo cuenta respuestas del bot, no el mensaje actual
     );
     
     const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
