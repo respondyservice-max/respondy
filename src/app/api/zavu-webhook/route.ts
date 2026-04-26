@@ -57,6 +57,14 @@ export async function POST(request: NextRequest) {
       .order('created_at', { ascending: false }).limit(20);
 
     const historyArray = (previousMessages || []).reverse();
+    
+    console.log('📋 HISTORIAL SUPABASE:', {
+      previousMessages: previousMessages?.length,
+      historyArray: historyArray.length,
+      phone: normalizedPhone,
+      businessId: targetBusiness.id
+    });
+
     const historyText = historyArray.map(m => `${m.message_type === 'incoming' ? 'Usuario' : 'Asistente'}: ${m.message_text}`).join('\n');
     
     // ── 3. PARSEAR DATOS ──
