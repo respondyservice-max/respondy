@@ -1,5 +1,5 @@
 export const dynamic = "force-dynamic";
-// app/api/zavu-webhook/route.ts - VERSIÓN FINAL CON CORREO OBLIGATORIO Y TICKET MEJORADO
+// app/api/zavu-webhook/route.ts - VERSIÓN FINAL CON HISTORIAL ARREGLADO
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { decrypt } from '@/lib/crypto';
@@ -48,31 +48,19 @@ export async function POST(request: NextRequest) {
       message_text: messageText,
     });
 
-    console.log('💾 INSERT resultado:', {
-      error: insertResult.error,
-      normalizedPhone,
-      messageText
-    });
+    if (insertResult.error) console.error('❌ Error guardando mensaje:', insertResult.error);
 
     await new Promise(resolve => setTimeout(resolve, 1000));
 
-    // ── 2. OBTENER HISTORIAL (20 mensajes) ──
+    // ── 2. OBTENER HISTORIAL (Usando ID para evitar fallo de created_at) ──
     const { data: previousMessages, error: historyError } = await supabaseAdmin
       .from('conversations').select('message_type, message_text')
       .eq('business_id', targetBusiness.id).eq('phone_from', normalizedPhone)
-      .order('created_at', { ascending: false }).limit(20);
+      .order('id', { ascending: false }).limit(20);
 
     if (historyError) console.error('❌ Error obteniendo historial:', historyError);
 
     const historyArray = (previousMessages || []).reverse();
-    
-    console.log('📋 HISTORIAL SUPABASE:', {
-      previousMessages: previousMessages?.length,
-      historyArray: historyArray.length,
-      phone: normalizedPhone,
-      businessId: targetBusiness.id
-    });
-
     const historyText = historyArray.map(m => `${m.message_type === 'incoming' ? 'Usuario' : 'Asistente'}: ${m.message_text}`).join('\n');
     
     // ── 3. PARSEAR DATOS ──
@@ -82,7 +70,7 @@ export async function POST(request: NextRequest) {
     const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
     let { data: sessionData } = await supabaseAdmin
       .from('appointments').select('*').eq('business_id', targetBusiness.id).eq('patient_phone', normalizedPhone)
-      .eq('status', 'draft').gte('created_at', fifteenMinsAgo).order('created_at', { ascending: false }).limit(1);
+      .eq('status', 'draft').gte('created_at', fifteenMinsAgo).order('id', { ascending: false }).limit(1);
 
     let sessionAppt = sessionData?.[0];
 
@@ -125,14 +113,7 @@ export async function POST(request: NextRequest) {
 
     const { data: upcoming } = await supabaseAdmin.from('appointments').select('*').eq('business_id', targetBusiness.id).gte('date_time', new Date().toISOString()).ilike('patient_phone', `%${normalizedPhone}%`);
 
-    // Contar solo mensajes del BOT. Si es 0, es el primer turno → debe saludar.
     const botMessageCount = historyArray.filter(m => m.message_type === 'outgoing').length;
-
-    console.log('🔍 DEBUG createDynamicPrompt:', {
-      totalMessages: historyArray.length,
-      botMessageCount,
-      hasHistory: botMessageCount > 0,
-    });
 
     const dynamicPrompt = createDynamicPrompt(
       targetBusiness, 
@@ -140,17 +121,9 @@ export async function POST(request: NextRequest) {
       (finalDateStr && finalTimeStr) ? { date: finalDateStr, time: finalTimeStr } : null, 
       upcoming || [], 
       { name: finalName, email: finalEmail, date: finalDateStr, time: finalTimeStr, service: finalService },
-      botMessageCount  // ← Solo cuenta respuestas del bot, no el mensaje actual
+      botMessageCount
     );
     
-    console.log('📨 MENSAJES A GROQ:', JSON.stringify([
-      { role: 'system', content: dynamicPrompt },
-      ...historyArray.slice(-15).map(m => ({ 
-        role: m.message_type === 'incoming' ? 'user' : 'assistant', 
-        content: m.message_text 
-      }))
-    ], null, 2));
-
     const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.GROQ_API_KEY}` },
