@@ -395,16 +395,20 @@ export function createDynamicPrompt(
 
   // MÁQUINA DE ESTADOS - SOLO LÓGICA DE FLUJO
   let nextStep = '';
-  if (isReady) {
+
+  // ✅ FIX: Verificar si availability es null ANTES de usarlo
+  if (!availability) {
+    nextStep = `ASISTE: resuelve dudas u ofrece agendar.`;
+  } else if (isReady) {
     nextStep = `CONFIRMAR cita: ${collectedData?.name}, ${collectedData?.date} ${collectedData?.time}. Muestra ticket.`;
   } else if (hasDate && hasTime && isSlotFree) {
     nextStep = `Tienes fecha/hora. RECOPILA: nombre y email.`;
   } else if (hasDate && hasTime && !isSlotFree) {
     nextStep = `Hora ocupada. OFRECE: ${availableSlots.join(', ')}.`;
   } else if (hasService) {
-    nextStep = `Usuario pidió ${collectedData?.service}. GUÍA a elegir fecha/hora. Disponible: ${availableSlots.join(', ')}.`;
+    nextStep = `Usuario pidió ${collectedData?.service}. GUÍA a elegir fecha/hora. ${availableSlots.length > 0 ? `Disponible: ${availableSlots.join(', ')}.` : ''}`;
   } else {
-    nextStep = `ASISTE: resuelve dudas u ofrece agendar. Hoy disponible: ${availableSlots.join(', ')}.`;
+    nextStep = `ASISTE: resuelve dudas u ofrece agendar. ${availableSlots.length > 0 ? `Hoy disponible: ${availableSlots.join(', ')}.` : ''}`;
   }
 
   return `
