@@ -403,34 +403,37 @@ export function createDynamicPrompt(
   // MÁQUINA DE ESTADOS - SOLO LÓGICA DE FLUJO
   let nextStep = '';
 
-  if (!availability && wantsToBook) {
-    nextStep = `ASISTE: El usuario quiere agendar pero no hay disponibilidad cargada. Explica y ayuda.`;
-  } else if (isReady) {
-    nextStep = `CONFIRMAR cita: ${collectedData?.name}, ${collectedData?.date} ${collectedData?.time}. 
-    IMPORTANTE: Para grabar la cita en el sistema DEBES incluir el símbolo ✓ al inicio de tu confirmación (Ej: ✓ Cita agendada para el martes...).`;
-  } else if (hasDate && hasTime && isSlotFree) {
-    nextStep = `Tienes fecha/hora. RECOPILA: nombre y email.`;
+  if (isReady) {
+    nextStep = `CONFIRMAR CITA. El usuario es ${collectedData?.name}, para el ${collectedData?.date} a las ${collectedData?.time}. 
+    Misión: Confirma la cita. DEBES empezar tu respuesta con el símbolo ✓ (ej: ✓ Cita agendada...).`;
+  } else if (hasName && hasEmail && hasService && !hasDate) {
+    nextStep = `Ya tienes los datos del paciente. Ahora PREGUNTA qué día quiere venir. 
+    IMPORTANTE: No menciones horarios todavía. Solo pregunta por el día.`;
+  } else if (hasDate && !hasTime) {
+    nextStep = `El usuario quiere venir el ${collectedData?.date}. Muestra estos horarios reales: ${availableSlots.length > 0 ? availableSlots.join(', ') : 'No hay disponibles'}. 
+    Instrucción: Solo ofrece los horarios de esa lista. No inventes otros.`;
   } else if (hasDate && hasTime && !isSlotFree) {
-    nextStep = `Hora ocupada. OFRECE: ${availableSlots.join(', ')}.`;
-  } else if (hasService) {
-    nextStep = `El usuario seleccionó ${collectedData?.service}. RESPONDE cualquier duda que tenga sobre esto y luego GUÍA a elegir fecha y hora. ${availableSlots.length > 0 ? `Horarios hoy: ${availableSlots.join(', ')}.` : ''}`;
-  } else if (wantsToBook) {
-    nextStep = `El usuario quiere agendar una cita. PREGUNTA qué servicio necesita de los que ofreces.`;
+    nextStep = `La hora ${collectedData?.time} está ocupada. Ofrece estas alternativas: ${availableSlots.join(', ')}.`;
+  } else if (hasName && hasEmail && !hasService) {
+    nextStep = `Ya tienes nombre y email. Pregunta qué servicio necesita de los que ofreces.`;
+  } else if (wantsToBook && !hasName) {
+    nextStep = `El usuario quiere agendar. Pide su NOMBRE completo y su EMAIL para iniciar.`;
   } else {
-    nextStep = `INFORMATIVO: El usuario está consultando sobre ${collectedData?.service || 'servicios'}. Responde sus dudas y usa tu personalidad para decidir si es oportuno invitar al agendamiento ahora o esperar a que el usuario lo pida.`;
+    nextStep = `INFORMATIVO: Responde dudas sobre servicios. Si preguntan si haces algo, confirma y usa tu personalidad para invitar a agendar.`;
   }
 
   return `
-### PERSONALIDAD DEL NEGOCIO ###
+### PERSONALIDAD ###
 ${business.prompt_custom || 'Eres la asistente amable de la clínica.'}
 
-### REGLAS DE ORO ANTIGRAVEDAD ###
-1. NUNCA uses corchetes como "[Nombre]" o "[Servicio]". Si no sabes el nombre de la clínica o un dato, NO lo menciones.
-2. RESPUESTA DIRECTA: El usuario te acaba de preguntar algo. Responde a eso PRIMERO.
-3. ESTADO DEL FLUJO: ${nextStep}
-4. SALUDOS: ${hasHistory ? 'Ya estás en una conversación. PROHIBIDO saludar de nuevo. No digas "Hola".' : 'Es el primer mensaje, saluda y preséntate.'}
+### ESTADO TÉCNICO (Misión) ###
+- ${nextStep}
 
-Responde siempre en máximo 2 frases cortas.
+### REGLAS CRÍTICAS ###
+1. NO INVENTES horarios ni días. Si no están en la lista de arriba, no existen.
+2. RESPUESTA CORTA: Máximo 2 frases.
+3. CONFIRMACIÓN: Solo si vas a confirmar la cita definitiva, usa el símbolo ✓ al inicio.
+4. CORCHETES: Prohibido usar [Nombre] o similares.
 `.trim();
 }
 
