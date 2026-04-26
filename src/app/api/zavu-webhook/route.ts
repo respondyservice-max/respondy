@@ -148,7 +148,14 @@ export async function POST(request: NextRequest) {
       availability,
       (finalDateStr && finalTimeStr) ? { date: finalDateStr, time: finalTimeStr } : null,
       upcoming || [],
-      { name: finalName, email: finalEmail, date: finalDateStr, time: finalTimeStr, service: finalService },
+      { 
+        name: finalName, 
+        email: finalEmail, 
+        date: finalDateStr, 
+        time: finalTimeStr, 
+        service: finalService,
+        bookingIntent: parsed.bookingIntent
+      },
       botMessageCount
     );
 

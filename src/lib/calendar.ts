@@ -348,7 +348,9 @@ export async function parseClientMessage(history: string): Promise<ParsedAppoint
         messages: [
           {
             role: 'system',
-            content: `Extrae datos de reserva en JSON: {patientName, patientEmail, date, time, service}. Hoy es ${todayStr}. Prioriza lo más reciente.`,
+            content: `Extrae datos de reserva en JSON: {patientName, patientEmail, date, time, service, bookingIntent}. 
+            'bookingIntent' es true SOLO si el usuario pide explícitamente una cita, reserva o agendar. 
+            Si solo pregunta disponibilidad o información, es false. Hoy es ${todayStr}.`,
           },
           { role: 'user', content: `Chat:\n${history}` },
         ],
@@ -360,23 +362,16 @@ export async function parseClientMessage(history: string): Promise<ParsedAppoint
     const data = await res.json();
     const result = JSON.parse(data.choices?.[0]?.message?.content || '{}');
 
-    const finalResult = {
+    return {
       patientName: result.patientName || null,
       patientEmail: result.patientEmail || null,
       date: result.date || null,
       time: result.time || null,
-      service: result.service || null
+      service: result.service || null,
+      bookingIntent: !!result.bookingIntent
     };
-
-    // Fallback de Seguridad: Si la IA no detectó el email pero hay uno en el texto, lo capturamos con Regex
-    if (!finalResult.patientEmail) {
-      const emailMatch = history.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
-      if (emailMatch) finalResult.patientEmail = emailMatch[0].toLowerCase().trim();
-    }
-
-    return finalResult;
   } catch (e) {
-    return { date: null, time: null, patientName: null, patientEmail: null, service: null };
+    return { date: null, time: null, patientName: null, patientEmail: null, service: null, bookingIntent: false };
   }
 }
 
@@ -385,7 +380,7 @@ export function createDynamicPrompt(
   availability: AvailabilityResult | null,
   requestedSlot: { date: string; time: string | null } | null,
   upcomingAppointments: any[] = [],
-  collectedData?: { name?: string | null; email?: string | null; date?: string | null; time?: string | null; service?: string | null },
+  collectedData?: { name?: string | null; email?: string | null; date?: string | null; time?: string | null; service?: string | null; bookingIntent?: boolean },
   historyLength?: number
 ): string {
 
@@ -399,24 +394,24 @@ export function createDynamicPrompt(
   const hasDate = !!collectedData?.date;
   const hasTime = !!collectedData?.time;
   const hasService = !!collectedData?.service;
+  const wantsToBook = !!collectedData?.bookingIntent || (hasDate && hasTime);
   const isReady = hasName && hasEmail && hasDate && hasTime && isSlotFree;
 
   // MÁQUINA DE ESTADOS - SOLO LÓGICA DE FLUJO
   let nextStep = '';
 
-  // ✅ FIX: Verificar si availability es null ANTES de usarlo
-  if (!availability) {
-    nextStep = `ASISTE: resuelve dudas u ofrece agendar.`;
+  if (!availability && wantsToBook) {
+    nextStep = `ASISTE: El usuario quiere agendar pero no hay disponibilidad cargada. Explica y ayuda.`;
   } else if (isReady) {
     nextStep = `CONFIRMAR cita: ${collectedData?.name}, ${collectedData?.date} ${collectedData?.time}. Muestra ticket.`;
   } else if (hasDate && hasTime && isSlotFree) {
     nextStep = `Tienes fecha/hora. RECOPILA: nombre y email.`;
   } else if (hasDate && hasTime && !isSlotFree) {
     nextStep = `Hora ocupada. OFRECE: ${availableSlots.join(', ')}.`;
-  } else if (hasService) {
-    nextStep = `Usuario pidió ${collectedData?.service}. GUÍA a elegir fecha/hora. ${availableSlots.length > 0 ? `Disponible: ${availableSlots.join(', ')}.` : ''}`;
+  } else if (wantsToBook) {
+    nextStep = `El usuario quiere agendar ${collectedData?.service || 'una cita'}. GUÍA a elegir fecha/hora. ${availableSlots.length > 0 ? `Disponible: ${availableSlots.join(', ')}.` : ''}`;
   } else {
-    nextStep = `RESPONDE directamente a lo que el usuario preguntó. Si menciona un servicio, confirma si lo ofrecen y guía al agendamiento. ${availableSlots.length > 0 ? `Disponibilidad hoy: ${availableSlots.join(', ')}.` : ''}`;
+    nextStep = `INFORMATIVO: El usuario está consultando. Responde sus dudas sobre ${collectedData?.service || 'servicios'}. NO presiones para agendar si no lo han pedido.`;
   }
 
   return `
@@ -425,7 +420,7 @@ ${business.prompt_custom || 'Eres la asistente amable de la clínica.'}
 
 ### CONTEXTO DE AGENDAMIENTO ###
 - Tu misión actual: ${nextStep}
-- IMPORTANTE: Si el usuario te hace una pregunta, respóndela primero de forma clara. No lo ignores para intentar agendar.
+- IMPORTANTE: Si el usuario te hace una pregunta, respóndela primero de forma clara. 
 - ${hasHistory ? 'Evita saludos repetitivos y ve al grano.' : 'Saluda y preséntate brevemente.'}
 
 REGLA DE ORO: Responde siempre a lo que el usuario acaba de decir. Máximo 2 frases.
