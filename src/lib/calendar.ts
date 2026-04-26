@@ -388,12 +388,12 @@ export function createDynamicPrompt(
   collectedData?: { name?: string | null; email?: string | null; date?: string | null; time?: string | null; service?: string | null },
   historyLength?: number
 ): string {
-  
+
   const hasHistory = historyLength && historyLength > 0;
   const availableSlots = availability?.available_slots || [];
   const cleanRequestedTime = requestedSlot?.time?.trim();
   const isSlotFree = cleanRequestedTime && availableSlots.includes(cleanRequestedTime);
-  
+
   const hasName = !!collectedData?.name;
   const hasEmail = !!collectedData?.email;
   const hasDate = !!collectedData?.date;

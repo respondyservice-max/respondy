@@ -137,10 +137,10 @@ export async function POST(request: NextRequest) {
     // Contar solo mensajes del BOT. Si es 0, es el primer turno → debe saludar.
     const botMessageCount = historyArray.filter(m => m.message_type === 'outgoing').length;
 
-    console.log('🔍 DEBUG createDynamicPrompt:', {
-      totalMessages: historyArray.length,
-      botMessageCount,
-      hasHistory: botMessageCount > 0,
+    console.log('🤖 INTENCION DETECTADA:', {
+      parsed,
+      sessionAppt: sessionAppt ? { id: sessionAppt.id, date_time: sessionAppt.date_time } : 'Ninguna',
+      botMessageCount
     });
 
     const dynamicPrompt = createDynamicPrompt(
