@@ -420,15 +420,15 @@ export function createDynamicPrompt(
   }
 
   return `
-${business.prompt_custom || 'Eres la asistente virtual de la clínica.'}
+Eres un asistente virtual con esta personalidad:
+${business.prompt_custom || 'Eres la asistente amable de la clínica.'}
 
-REGLA #1: LEE el último mensaje del usuario y RESPONDE a eso. No repitas preguntas genéricas.
+### CONTEXTO DE AGENDAMIENTO ###
+- Tu misión actual: ${nextStep}
+- IMPORTANTE: Si el usuario te hace una pregunta, respóndela primero de forma clara. No lo ignores para intentar agendar.
+- ${hasHistory ? 'Evita saludos repetitivos y ve al grano.' : 'Saluda y preséntate brevemente.'}
 
-ESTADO ACTUAL: ${nextStep}
-
-${hasHistory ? 'Ya saludaste. NO te presentes de nuevo.' : ''}
-
-Máximo 2 frases.
+REGLA DE ORO: Responde siempre a lo que el usuario acaba de decir. Máximo 2 frases.
 `.trim();
 }
 
