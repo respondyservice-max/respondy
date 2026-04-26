@@ -40,18 +40,17 @@ export async function POST(request: NextRequest) {
 
     await new Promise(r => setTimeout(r, 1000));
 
-    // 2. OBTENER HISTORIAL (Query ultra-simplificada para evitar fallos de columnas)
-    // Buscamos solo por teléfono para máxima seguridad
+    // 2. OBTENER HISTORIAL (Ordenado por timestamp para evitar el caos de los UUIDs)
     const { data: history, error: hErr } = await supabaseAdmin
       .from('conversations')
-      .select('message_type, message_text, id')
+      .select('message_type, message_text, timestamp')
       .eq('phone_from', normalizedPhone)
+      .order('timestamp', { ascending: true })
       .limit(20);
 
     if (hErr) console.error('❌ Error Supabase History:', hErr);
 
-    // Ordenamos manualmente por ID por si la DB no tiene created_at o falla el order
-    const historyArray = (history || []).sort((a, b) => a.id - b.id);
+    const historyArray = history || [];
     
     console.log('📋 HISTORIAL RECUPERADO:', {
       count: historyArray.length,
