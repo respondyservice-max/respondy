@@ -81,24 +81,18 @@ export async function checkAvailability(
   const daysMap = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado'];
   const dayKey = daysMap[dayIndex];
 
-  let dayStart = '09:00';
-  let dayEnd = '18:00';
+  let dayStart = '08:00';
+  let dayEnd = '21:00';
   let isClosed = false;
 
   if (business.weekly_schedule && business.weekly_schedule[dayKey]) {
-    const config = business.weekly_schedule[dayKey];
-    if (!config.active) {
+    const dayConfig = business.weekly_schedule[dayKey];
+    if (dayConfig.active === false) {
       isClosed = true;
     } else {
-      dayStart = config.open;
-      dayEnd = config.close;
+      if (dayConfig.open) dayStart = dayConfig.open;
+      if (dayConfig.close) dayEnd = dayConfig.close;
     }
-  } else {
-    // Fallback temporal si por alguna razón no tienen el JSON
-    const legacySchedule = business.schedule_monday || '9AM-6PM';
-    const parsed = parseSchedule(legacySchedule);
-    dayStart = parsed.start;
-    dayEnd = parsed.end;
   }
 
   // Si el local está cerrado por configuración, devolvemos directo
