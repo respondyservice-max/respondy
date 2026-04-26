@@ -123,6 +123,24 @@ export async function POST(request: NextRequest) {
     const botMsgCount = historyArray.filter(m => m.message_type === 'outgoing').length;
 
     // 6. PROMPT Y GROQ
+    console.log('📅 AVAILABILITY DEBUG:', {
+      hasCalendarToken: !!targetBusiness.google_calendar_access_token_encrypted,
+      finalDateStr: finalDate,
+      availability: availability ? {
+        available_slots: availability.available_slots,
+        occupied_times: availability.occupied_times
+      } : 'NULL - no se llamó checkAvailability'
+    });
+
+    console.log('🔍 STATE DEBUG:', {
+      hasName: finalName,
+      hasEmail: finalEmail,
+      hasDate: finalDate,
+      hasTime: finalTime,
+      hasService: finalService,
+      isSlotFree: availability?.available_slots?.includes(finalTime || '')
+    });
+
     const dynamicPrompt = createDynamicPrompt(
       targetBusiness, availability, 
       (finalDate && finalTime) ? { date: finalDate, time: finalTime } : null, 
