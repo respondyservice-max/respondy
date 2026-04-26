@@ -127,6 +127,14 @@ export async function POST(request: NextRequest) {
       botMessageCount  // ← Solo cuenta respuestas del bot, no el mensaje actual
     );
     
+    console.log('📨 MENSAJES A GROQ:', JSON.stringify([
+      { role: 'system', content: dynamicPrompt },
+      ...historyArray.slice(-15).map(m => ({ 
+        role: m.message_type === 'incoming' ? 'user' : 'assistant', 
+        content: m.message_text 
+      }))
+    ], null, 2));
+
     const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.GROQ_API_KEY}` },
