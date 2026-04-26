@@ -357,6 +357,8 @@ export async function parseClientMessage(history: string): Promise<ParsedAppoint
             role: 'system',
             content: `Extrae datos de reserva en JSON: {patientName, patientEmail, date, time, service, bookingIntent}. 
             'bookingIntent' es true SOLO si el usuario pide explícitamente una cita, reserva o agendar. 
+            IMPORTANTE: El campo "time" SIEMPRE en formato HH:MM en 24 horas. 
+            Ejemplos: "a las 11" → "11:00", "1030" → "10:30", "3pm" → "15:00".
             Si solo pregunta disponibilidad o información, es false. Hoy es ${todayStr}.`,
           },
           { role: 'user', content: `Chat:\n${history}` },
@@ -369,11 +371,20 @@ export async function parseClientMessage(history: string): Promise<ParsedAppoint
     const data = await res.json();
     const result = JSON.parse(data.choices?.[0]?.message?.content || '{}');
 
+    let time = result.time || null;
+    if (time) {
+      // Normalizar: "15" → "15:00", "1030" → "10:30", "11am" → "11:00"
+      time = time.replace(/[^0-9:]/g, ''); // quitar am/pm/espacios
+      if (time.length <= 2) time = `${time.padStart(2,'0')}:00`;
+      if (time.length === 3) time = `0${time[0]}:${time.slice(1)}`;
+      if (time.length === 4 && !time.includes(':')) time = `${time.slice(0,2)}:${time.slice(2)}`;
+    }
+
     return {
       patientName: result.patientName || null,
       patientEmail: result.patientEmail || null,
       date: result.date || null,
-      time: result.time || null,
+      time: time,
       service: result.service || null,
       bookingIntent: !!result.bookingIntent
     };
