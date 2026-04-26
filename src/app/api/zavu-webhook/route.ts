@@ -1,5 +1,4 @@
 export const dynamic = "force-dynamic";
-// app/api/zavu-webhook/route.ts - VERSIÓN FINAL CON CORREO OBLIGATORIO Y TICKET MEJORADO
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { decrypt } from '@/lib/crypto';
@@ -23,80 +22,53 @@ export async function POST(request: NextRequest) {
     const phoneFrom = data.data?.from;
 
     if (data.type !== 'message.inbound') return NextResponse.json({ success: true, ignored: true });
-    if (!senderIdFromZavu || !messageText) return NextResponse.json({ error: 'Data incompleta' }, { status: 400 });
+    if (!senderIdFromZavu || !messageText) return NextResponse.json({ error: 'Incompleto' }, { status: 400 });
 
     const { data: businesses } = await supabaseAdmin.from('businesses').select('*');
-    let targetBusiness = null;
-    for (const b of businesses || []) {
-      if (b.zavu_sender_id_encrypted && decrypt(b.zavu_sender_id_encrypted) === senderIdFromZavu) {
-        targetBusiness = b; break;
-      }
-    }
+    let targetBusiness = businesses?.find(b => b.zavu_sender_id_encrypted && decrypt(b.zavu_sender_id_encrypted) === senderIdFromZavu);
+    
     if (!targetBusiness) return NextResponse.json({ error: 'Business no encontrado' }, { status: 404 });
-
+    
     const normalizedPhone = phoneFrom.replace('+', '');
 
-    // ── 0. FILTRO DE BLOQUEO ──
-    const blockedNumbers = targetBusiness.weekly_schedule?._config?.blocked_numbers || [];
-    if (blockedNumbers.includes(normalizedPhone)) return NextResponse.json({ success: true, message: 'Bloqueado' });
-
-    // ── 1. GUARDAR MENSAJE USUARIO ──
-    const insertResult = await supabaseAdmin.from('conversations').insert({
+    // 1. GUARDAR MENSAJE
+    await supabaseAdmin.from('conversations').insert({
       business_id: targetBusiness.id,
       phone_from: normalizedPhone,
       message_type: 'incoming',
       message_text: messageText,
     });
 
-    console.log('💾 INSERT resultado:', {
-      error: insertResult.error,
-      normalizedPhone,
-      messageText
-    });
+    await new Promise(r => setTimeout(r, 800));
 
-    await new Promise(resolve => setTimeout(resolve, 1000));
-
-    // ── 2. OBTENER HISTORIAL (20 mensajes) ──
-    const { data: previousMessages, error: historyError } = await supabaseAdmin
+    // 2. HISTORIAL (Sin orden para evitar fallos de columnas)
+    const { data: history } = await supabaseAdmin
       .from('conversations').select('message_type, message_text')
       .eq('business_id', targetBusiness.id).eq('phone_from', normalizedPhone)
-      .order('created_at', { ascending: false }).limit(20);
+      .limit(15);
 
-    if (historyError) console.error('❌ Error obteniendo historial:', historyError);
+    const historyArray = history || [];
+    const botMsgCount = historyArray.filter(m => m.message_type === 'outgoing').length;
+    const historyText = historyArray.map(m => `${m.message_type === 'incoming' ? 'User' : 'Assistant'}: ${m.message_text}`).join('\n');
 
-    const historyArray = (previousMessages || []).reverse();
+    // 3. PARSER
+    const parsed = await parseClientMessage(`${historyText}\nUser: ${messageText}`);
 
-    console.log('📋 HISTORIAL SUPABASE:', {
-      previousMessages: previousMessages?.length,
-      historyArray: historyArray.length,
-      phone: normalizedPhone,
-      businessId: targetBusiness.id
-    });
-
-    const historyText = historyArray.map(m => `${m.message_type === 'incoming' ? 'Usuario' : 'Asistente'}: ${m.message_text}`).join('\n');
-
-    // ── 3. PARSEAR DATOS ──
-    const parsed = await parseClientMessage(`${historyText}\nUsuario: ${messageText}`);
-
-    // ── 4. SINCRONIZAR CON BORRADOR ──
-    const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
-    let { data: sessionData } = await supabaseAdmin
+    // 4. SESIÓN / APPOINTMENTS
+    let { data: sessions } = await supabaseAdmin
       .from('appointments').select('*').eq('business_id', targetBusiness.id).eq('patient_phone', normalizedPhone)
-      .eq('status', 'draft').gte('created_at', fifteenMinsAgo).order('created_at', { ascending: false }).limit(1);
+      .eq('status', 'draft').limit(1);
 
-    let sessionAppt = sessionData?.[0];
+    let sessionAppt = sessions?.[0];
 
     if (parsed.patientName || parsed.date || parsed.time || parsed.service || parsed.patientEmail) {
       const updateData: any = {};
       if (parsed.patientName) updateData.patient_name = parsed.patientName;
       if (parsed.patientEmail) updateData.patient_email = parsed.patientEmail;
       if (parsed.service) updateData.service = parsed.service;
-
-      let fDate = parsed.date || (sessionAppt?.date_time ? sessionAppt.date_time.split('T')[0] : null);
-      let fTime = parsed.time || (sessionAppt?.date_time ? sessionAppt.date_time.split('T')[1].substring(0, 5) : null);
       
-      if (fDate && fTime) {
-        const d = new Date(`${fDate}T${fTime}:00`);
+      if (parsed.date && parsed.time) {
+        const d = new Date(`${parsed.date}T${parsed.time}:00`);
         if (!isNaN(d.getTime())) updateData.date_time = d.toISOString();
       }
 
@@ -104,81 +76,56 @@ export async function POST(request: NextRequest) {
         const { data: u } = await supabaseAdmin.from('appointments').update(updateData).eq('id', sessionAppt.id).select();
         sessionAppt = u?.[0];
       } else {
-        let finalISO = null;
-        if (fDate && fTime) {
-          const d = new Date(`${fDate}T${fTime}:00`);
-          if (!isNaN(d.getTime())) finalISO = d.toISOString();
-        }
         const { data: i } = await supabaseAdmin.from('appointments').insert({
           business_id: targetBusiness.id, patient_phone: normalizedPhone,
           patient_name: parsed.patientName || null, status: 'draft',
-          patient_email: parsed.patientEmail || null,
-          service: parsed.service || null,
-          date_time: finalISO
+          patient_email: parsed.patientEmail || null, service: parsed.service || null,
+          date_time: updateData.date_time || null
         }).select();
         sessionAppt = i?.[0];
       }
     }
 
-    const finalName = parsed.patientName || (sessionAppt?.patient_name !== 'Paciente' ? sessionAppt?.patient_name : null) || null;
+    const finalName = parsed.patientName || sessionAppt?.patient_name || null;
     const finalEmail = parsed.patientEmail || sessionAppt?.patient_email || null;
-    const finalDateStr = parsed.date || (sessionAppt?.date_time ? sessionAppt.date_time.split('T')[0] : null);
-    const finalTimeStr = parsed.time || (sessionAppt?.date_time ? sessionAppt.date_time.split('T')[1].substring(0, 5) : null);
+    const finalDate = parsed.date || (sessionAppt?.date_time?.split('T')[0]) || null;
+    const finalTime = parsed.time || (sessionAppt?.date_time?.split('T')[1]?.substring(0, 5)) || null;
     const finalService = parsed.service || sessionAppt?.service || null;
 
-    // ── 5. DISPONIBILIDAD Y PROMPT ──
+    // 5. DISPONIBILIDAD
     let availability = null;
-    if (targetBusiness.google_calendar_access_token_encrypted && finalDateStr) {
-      availability = await checkAvailability(targetBusiness, finalDateStr);
+    if (targetBusiness.google_calendar_access_token_encrypted && finalDate) {
+      availability = await checkAvailability(targetBusiness, finalDate);
     }
 
     const { data: upcoming } = await supabaseAdmin.from('appointments').select('*').eq('business_id', targetBusiness.id).gte('date_time', new Date().toISOString()).ilike('patient_phone', `%${normalizedPhone}%`);
 
-    // Contar solo mensajes del BOT. Si es 0, es el primer turno → debe saludar.
-    const botMessageCount = historyArray.filter(m => m.message_type === 'outgoing').length;
-
-    console.log('🤖 INTENCION DETECTADA:', {
-      parsed,
-      sessionAppt: sessionAppt ? { id: sessionAppt.id, date_time: sessionAppt.date_time } : 'Ninguna',
-      botMessageCount
-    });
-
+    // 6. PROMPT Y GROQ
     const dynamicPrompt = createDynamicPrompt(
-      targetBusiness,
-      availability,
-      (finalDateStr && finalTimeStr) ? { date: finalDateStr, time: finalTimeStr } : null,
-      upcoming || [],
-      { 
-        name: finalName, 
-        email: finalEmail, 
-        date: finalDateStr, 
-        time: finalTimeStr, 
-        service: finalService,
-        bookingIntent: parsed.bookingIntent
-      },
-      botMessageCount
+      targetBusiness, availability, 
+      (finalDate && finalTime) ? { date: finalDate, time: finalTime } : null, 
+      upcoming || [], 
+      { name: finalName, email: finalEmail, date: finalDate, time: finalTime, service: finalService, bookingIntent: parsed.bookingIntent },
+      botMsgCount
     );
-
-    console.log('📨 MENSAJES A GROQ:', JSON.stringify([
-      { role: 'system', content: dynamicPrompt },
-      ...historyArray.slice(-15).map(m => ({
-        role: m.message_type === 'incoming' ? 'user' : 'assistant',
-        content: m.message_text
-      }))
-    ], null, 2));
 
     const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.GROQ_API_KEY}` },
       body: JSON.stringify({
         model: 'llama-3.1-8b-instant',
-        messages: [{ role: 'system', content: dynamicPrompt }, ...historyArray.slice(-15).map(m => ({ role: m.message_type === 'incoming' ? 'user' : 'assistant', content: m.message_text }))],
-        temperature: 0.4
+        messages: [
+          { role: 'system', content: dynamicPrompt },
+          ...historyArray.map(m => ({ role: m.message_type === 'incoming' ? 'user' : 'assistant', content: m.message_text }))
+        ],
+        temperature: 0.3
       }),
     });
-    const groqData = await groqRes.json();
-    const botResponse = groqData.choices?.[0]?.message?.content || 'Error técnico.';
 
+    const groqData = await groqRes.json();
+    const botResponse = groqData.choices?.[0]?.message?.content || 'Lo siento, tuve un error.';
+
+    // 7. ACCIONES Y ENVÍO
     const conf = extractConfirmation(botResponse);
     const canc = extractCancellation(botResponse);
     const reag = await extractReschedule(botResponse);
@@ -187,46 +134,29 @@ export async function POST(request: NextRequest) {
     if (reag && upcoming) {
       const a = upcoming.find(x => x.id === reag.id);
       if (a && reag.date && reag.time) {
-        const newD = new Date(`${reag.date}T${reag.time}:00`);
-        if (!isNaN(newD.getTime())) {
+        const d = new Date(`${reag.date}T${reag.time}:00`);
+        if (!isNaN(d.getTime())) {
           if (a.google_event_id) await updateCalendarEvent(targetBusiness, a.google_event_id, reag.date, reag.time);
-          await supabaseAdmin.from('appointments').update({ date_time: newD.toISOString() }).eq('id', a.id);
+          await supabaseAdmin.from('appointments').update({ date_time: d.toISOString() }).eq('id', a.id);
         }
       }
     } else if (canc && upcoming) {
       const a = upcoming.find(x => x.id === canc);
       if (a && a.google_event_id) await deleteCalendarEvent(targetBusiness, a.google_event_id);
       if (a) await supabaseAdmin.from('appointments').delete().eq('id', a.id);
-    } else if (conf) {
-      let fD = finalDateStr, fT = finalTimeStr, fN = finalName, fS = finalService, fE = finalEmail;
-      if (!fD || !fT || !fN || !fS || !fE) {
-        const bP = await parseClientMessage(botResponse);
-        fD = fD || bP.date; fT = fT || bP.time; fN = fN || bP.patientName; fS = fS || bP.service; fE = fE || bP.patientEmail;
-      }
-
-      if (fD && fT && fN && fE) {
-        const config = targetBusiness.weekly_schedule?._config || {};
-        const sList = config.services_list || [];
-        const sData = sList.find((s: any) =>
-          s.name.toLowerCase().trim() === (fS || '').toLowerCase().trim() ||
-          (fS || '').toLowerCase().includes(s.name.toLowerCase()) ||
-          s.name.toLowerCase().includes((fS || '').toLowerCase())
-        );
-        const isVideo = sData?.isVideo || false;
-
-        const eventRes = await createCalendarEvent(targetBusiness, {
-          patientName: fN, patientPhone: normalizedPhone, patientEmail: fE, service: sData?.name || fS || 'Consulta', date: fD, time: fT, includeVideoCall: isVideo
+    } else if (conf && finalDate && finalTime && finalName && finalEmail) {
+      const eventRes = await createCalendarEvent(targetBusiness, { 
+        patientName: finalName, patientPhone: normalizedPhone, patientEmail: finalEmail, 
+        service: finalService || 'Consulta', date: finalDate, time: finalTime 
+      });
+      if (eventRes.success) {
+        const ticket = `✅ *Cita Confirmada*\n👤 ${finalName}\n📅 ${finalDate}\n⏰ ${finalTime}\n📝 ${finalService || 'Consulta'}`;
+        await fetch('https://api.zavu.dev/v1/messages', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${zavuApiKey}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ senderId: senderIdFromZavu, to: phoneFrom, text: ticket }),
         });
-
-        if (eventRes.success) {
-          const ticketMsg = `🎫 *TICKET DE RESERVA*\n\n✅ *Confirmado:* ${fN}\n📧 *Email:* ${fE}\n📝 *Servicio:* ${sData?.name || fS || 'Consulta'}\n📅 *Día:* ${fD}\n⏰ *Hora:* ${fT}${eventRes.meetLink ? `\n🎥 *Videollamada:* ${eventRes.meetLink}` : '\n📍 *Lugar:* Presencial'}\n\n¡Te esperamos!`;
-          await fetch('https://api.zavu.dev/v1/messages', {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${zavuApiKey}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ senderId: senderIdFromZavu, to: phoneFrom, text: ticketMsg }),
-          });
-          await supabaseAdmin.from('conversations').insert({ business_id: targetBusiness.id, phone_from: normalizedPhone, message_type: 'outgoing', message_text: ticketMsg });
-        }
+        await supabaseAdmin.from('conversations').insert({ business_id: targetBusiness.id, phone_from: normalizedPhone, message_type: 'outgoing', message_text: ticket });
       }
     }
 
@@ -238,8 +168,8 @@ export async function POST(request: NextRequest) {
     await supabaseAdmin.from('conversations').insert({ business_id: targetBusiness.id, phone_from: normalizedPhone, message_type: 'outgoing', message_text: botResponse });
 
     return NextResponse.json({ success: true });
-  } catch (error) {
-    console.error('Error:', error);
-    return NextResponse.json({ error: 'Error interno' }, { status: 500 });
+  } catch (e) {
+    console.error('CRITICAL:', e);
+    return NextResponse.json({ error: 'Error' }, { status: 500 });
   }
 }
