@@ -199,6 +199,17 @@ export async function checkAvailability(
     `${pad(Math.floor(r.start / 60))}:${pad(r.start % 60)}`
   );
 
+  console.log('🕐 SLOTS DEBUG:', {
+    dayOfWeek,
+    workingDays,
+    dayStartMins,
+    dayEndMins,
+    nowMinsChile,
+    leadTimeHours,
+    occupiedRanges,
+    available_slots
+  });
+
   return {
     requested_slot: null,
     is_available: available_slots.length > 0,
@@ -424,7 +435,9 @@ export function createDynamicPrompt(
 
   if (isReady) {
     nextStep = `CONFIRMAR CITA: ${collectedData?.name}, ${collectedData?.date} a las ${collectedData?.time}.
-    DEBES empezar tu respuesta EXACTAMENTE con ✓ (ej: "✓ ¡Cita confirmada!...").`;
+    TU RESPUESTA DEBE COMENZAR CON EL SÍMBOLO ✓ OBLIGATORIAMENTE.
+    EJEMPLO EXACTO: "✓ ¡Cita confirmada! Claudio, tienes cita el martes 28 a las 11:00."
+    SI NO EMPIEZAS CON ✓ EL SISTEMA FALLARÁ.`;
 
   } else if (hasDate && hasTime && !isSlotFree) {
     nextStep = `La hora ${collectedData?.time} no está disponible.
@@ -458,6 +471,7 @@ export function createDynamicPrompt(
 ${nextStep}
 
 ### RESTRICCIONES TÉCNICAS ###
+0. CONFIRMACIÓN OBLIGATORIA: Si tu misión es CONFIRMAR CITA, tu respuesta DEBE iniciar con ✓. Sin excepción.
 1. Los horarios disponibles ya están indicados en la MISIÓN. No uses otros.
 2. Usa ✓ al inicio SOLO cuando confirmes la cita definitivamente.
 3. Prohibido usar placeholders como [Nombre] o [Clínica].
