@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
   try {
     const data = await request.json();
     const senderIdFromZavu = data.senderId;
-    const messageText = data.data?.text;
+    const messageText = (data.data?.text || '').trim();
     const phoneFrom = data.data?.from;
 
     if (data.type !== 'message.inbound') return NextResponse.json({ success: true, ignored: true });
@@ -26,7 +26,6 @@ export async function POST(request: NextRequest) {
 
     const { data: businesses } = await supabaseAdmin.from('businesses').select('*');
     let targetBusiness = businesses?.find(b => b.zavu_sender_id_encrypted && decrypt(b.zavu_sender_id_encrypted) === senderIdFromZavu);
-    
     if (!targetBusiness) return NextResponse.json({ error: 'Business no encontrado' }, { status: 404 });
     
     const normalizedPhone = phoneFrom.replace('+', '');
@@ -39,16 +38,27 @@ export async function POST(request: NextRequest) {
       message_text: messageText,
     });
 
-    await new Promise(r => setTimeout(r, 800));
+    await new Promise(r => setTimeout(r, 1000));
 
-    // 2. HISTORIAL (Sin orden para evitar fallos de columnas)
-    const { data: history } = await supabaseAdmin
-      .from('conversations').select('message_type, message_text')
-      .eq('business_id', targetBusiness.id).eq('phone_from', normalizedPhone)
-      .limit(15);
+    // 2. OBTENER HISTORIAL (Query ultra-simplificada para evitar fallos de columnas)
+    // Buscamos solo por teléfono para máxima seguridad
+    const { data: history, error: hErr } = await supabaseAdmin
+      .from('conversations')
+      .select('message_type, message_text, id')
+      .eq('phone_from', normalizedPhone)
+      .limit(20);
 
-    const historyArray = history || [];
-    const botMsgCount = historyArray.filter(m => m.message_type === 'outgoing').length;
+    if (hErr) console.error('❌ Error Supabase History:', hErr);
+
+    // Ordenamos manualmente por ID por si la DB no tiene created_at o falla el order
+    const historyArray = (history || []).sort((a, b) => a.id - b.id);
+    
+    console.log('📋 HISTORIAL RECUPERADO:', {
+      count: historyArray.length,
+      lastMsg: historyArray[historyArray.length - 1]?.message_text,
+      phone: normalizedPhone
+    });
+
     const historyText = historyArray.map(m => `${m.message_type === 'incoming' ? 'User' : 'Assistant'}: ${m.message_text}`).join('\n');
 
     // 3. PARSER
@@ -60,6 +70,14 @@ export async function POST(request: NextRequest) {
       .eq('status', 'draft').limit(1);
 
     let sessionAppt = sessions?.[0];
+
+    // Fallback de reconocimiento de servicio si el mensaje es corto y coincide con la lista
+    const config = targetBusiness.weekly_schedule?._config || {};
+    const services = config.services_list || [];
+    if (!parsed.service) {
+      const matchSrv = services.find((s: any) => messageText.toLowerCase().includes(s.name.toLowerCase()));
+      if (matchSrv) parsed.service = matchSrv.name;
+    }
 
     if (parsed.patientName || parsed.date || parsed.time || parsed.service || parsed.patientEmail) {
       const updateData: any = {};
@@ -100,6 +118,8 @@ export async function POST(request: NextRequest) {
 
     const { data: upcoming } = await supabaseAdmin.from('appointments').select('*').eq('business_id', targetBusiness.id).gte('date_time', new Date().toISOString()).ilike('patient_phone', `%${normalizedPhone}%`);
 
+    const botMsgCount = historyArray.filter(m => m.message_type === 'outgoing').length;
+
     // 6. PROMPT Y GROQ
     const dynamicPrompt = createDynamicPrompt(
       targetBusiness, availability, 
@@ -123,7 +143,7 @@ export async function POST(request: NextRequest) {
     });
 
     const groqData = await groqRes.json();
-    const botResponse = groqData.choices?.[0]?.message?.content || 'Lo siento, tuve un error.';
+    const botResponse = (groqData.choices?.[0]?.message?.content || 'Error técnico.').trim();
 
     // 7. ACCIONES Y ENVÍO
     const conf = extractConfirmation(botResponse);

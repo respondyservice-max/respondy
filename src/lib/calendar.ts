@@ -402,8 +402,10 @@ export function createDynamicPrompt(
     nextStep = `Tienes fecha/hora. RECOPILA: nombre y email.`;
   } else if (hasDate && hasTime && !isSlotFree) {
     nextStep = `Hora ocupada. OFRECE: ${availableSlots.join(', ')}.`;
+  } else if (hasService) {
+    nextStep = `El usuario seleccionó ${collectedData?.service}. RESPONDE cualquier duda que tenga sobre esto y luego GUÍA a elegir fecha y hora. ${availableSlots.length > 0 ? `Horarios hoy: ${availableSlots.join(', ')}.` : ''}`;
   } else if (wantsToBook) {
-    nextStep = `El usuario quiere agendar ${collectedData?.service || 'una cita'}. GUÍA a elegir fecha/hora. ${availableSlots.length > 0 ? `Disponible: ${availableSlots.join(', ')}.` : ''}`;
+    nextStep = `El usuario quiere agendar una cita. PREGUNTA qué servicio necesita de los que ofreces.`;
   } else {
     nextStep = `INFORMATIVO: El usuario está consultando sobre ${collectedData?.service || 'servicios'}. Responde sus dudas y usa tu personalidad para decidir si es oportuno invitar al agendamiento ahora o esperar a que el usuario lo pida.`;
   }
