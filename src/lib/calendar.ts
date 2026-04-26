@@ -360,13 +360,21 @@ export async function parseClientMessage(history: string): Promise<ParsedAppoint
     const data = await res.json();
     const result = JSON.parse(data.choices?.[0]?.message?.content || '{}');
 
-    return {
+    const finalResult = {
       patientName: result.patientName || null,
       patientEmail: result.patientEmail || null,
       date: result.date || null,
       time: result.time || null,
       service: result.service || null
     };
+
+    // Fallback de Seguridad: Si la IA no detectó el email pero hay uno en el texto, lo capturamos con Regex
+    if (!finalResult.patientEmail) {
+      const emailMatch = history.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+      if (emailMatch) finalResult.patientEmail = emailMatch[0].toLowerCase().trim();
+    }
+
+    return finalResult;
   } catch (e) {
     return { date: null, time: null, patientName: null, patientEmail: null, service: null };
   }

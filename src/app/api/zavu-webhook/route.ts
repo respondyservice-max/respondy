@@ -67,10 +67,10 @@ export async function POST(request: NextRequest) {
     const parsed = await parseClientMessage(`${historyText}\nUsuario: ${messageText}`);
     
     // ── 4. SINCRONIZAR CON BORRADOR ──
-    const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+    // Eliminamos gte('created_at') por si la columna no existe en esta tabla también
     let { data: sessionData } = await supabaseAdmin
       .from('appointments').select('*').eq('business_id', targetBusiness.id).eq('patient_phone', normalizedPhone)
-      .eq('status', 'draft').gte('created_at', fifteenMinsAgo).order('id', { ascending: false }).limit(1);
+      .eq('status', 'draft').order('id', { ascending: false }).limit(1);
 
     let sessionAppt = sessionData?.[0];
 
