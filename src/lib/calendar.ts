@@ -66,132 +66,132 @@ export async function getGoogleCalendarClient(business: any) {
 export async function checkAvailability(
   business: any,
   date: string, // YYYY-MM-DD
-  durationMinutes?: number
 ): Promise<AvailabilityResult> {
   const config = business.weekly_schedule?._config || {};
-  const duration = durationMinutes || config.appointment_duration || business.appointment_duration || 45;
-  const leadTimeHours = config.min_lead_time_hours || business.min_lead_time_hours || 0;
+  const duration = config.appointment_duration || business.appointment_duration || 45;
+  const leadTimeHours = config.min_lead_time_hours || 0;
 
-  const auth = await getGoogleCalendarClient(business);
-  const calendar = google.calendar({ version: 'v3', auth });
+  const date_label = new Date(`${date}T12:00:00`).toLocaleDateString('es-CL', {
+    weekday: 'long', day: 'numeric', month: 'long', timeZone: 'America/Santiago'
+  });
 
-  // ─── Obtener configuración de horario para el día solicitado ──────────────
-  const requestDateObj = new Date(`${date}T12:00:00`);
-  const dayIndex = requestDateObj.getDay(); // 0: domingo, 1: lunes...
-  const daysMap = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado'];
-  const dayKey = daysMap[dayIndex];
-
-  let dayStart = '08:00';
-  let dayEnd = '21:00';
-  let isClosed = false;
-
-  if (business.weekly_schedule && business.weekly_schedule[dayKey]) {
-    const dayConfig = business.weekly_schedule[dayKey];
-    if (dayConfig.active === false) {
-      isClosed = true;
-    } else {
-      if (dayConfig.open) dayStart = dayConfig.open;
-      if (dayConfig.close) dayEnd = dayConfig.close;
-    }
+  // Validar fecha
+  if (isNaN(new Date(`${date}T12:00:00`).getTime())) {
+    return { requested_slot: null, is_available: false, occupied_times: [], available_slots: [], suggested_alternatives: [], date_label: 'Fecha no válida' };
   }
 
-  // Si el local está cerrado por configuración, devolvemos directo
-  if (isClosed) {
-    const date_label = requestDateObj.toLocaleDateString('es-CL', {
-      weekday: 'long', day: 'numeric', month: 'long', timeZone: 'America/Santiago'
+  let auth;
+  try {
+    auth = await getGoogleCalendarClient(business);
+  } catch {
+    return { requested_slot: null, is_available: false, occupied_times: [], available_slots: [], suggested_alternatives: [], date_label };
+  }
+
+  const calendar = google.calendar({ version: 'v3', auth });
+
+  // ── 1. Leer horario del día desde Google Calendar (Working Hours) ──
+  // Consultamos los eventos del día incluyendo eventos de todo el día
+  // para detectar si el calendario marca el día como no disponible
+  const tzOffset = '-04:00'; // America/Santiago (ajusta si el negocio puede estar en otra zona)
+  const timeMin = `${date}T00:00:00${tzOffset}`;
+  const timeMax = `${date}T23:59:59${tzOffset}`;
+
+  // ── 2. Usar FreeBusy API para obtener rangos ocupados ──
+  const freeBusyRes = await calendar.freebusy.query({
+    requestBody: {
+      timeMin,
+      timeMax,
+      timeZone: 'America/Santiago',
+      items: [{ id: business.google_calendar_id || 'primary' }],
+    },
+  });
+
+  const calendarId = business.google_calendar_id || 'primary';
+  const busyRanges = freeBusyRes.data.calendars?.[calendarId]?.busy || [];
+
+  // Convertir rangos ocupados a minutos
+  const pad = (n: number) => String(n).padStart(2, '0');
+
+  const toMins = (isoStr: string) => {
+    const d = new Date(isoStr);
+    const timeStr = d.toLocaleTimeString('es-CL', {
+      hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/Santiago'
     });
+    const [h, m] = timeStr.split(':').map(Number);
+    return h * 60 + m;
+  };
+
+  const occupiedRanges = busyRanges
+    .filter(r => r.start && r.end)
+    .map(r => ({ start: toMins(r.start!), end: toMins(r.end!) }));
+
+  // ── 3. Leer horario de apertura desde Google Calendar Settings ──
+  // Si no hay eventos de "no disponible", usamos el horario de trabajo
+  // configurado en Google Calendar. Fallback: 09:00 - 18:00
+  let dayStartMins = 9 * 60;  // 09:00
+  let dayEndMins = 18 * 60;   // 18:00
+
+  try {
+    const settingsRes = await calendar.settings.list();
+    // Google Calendar Working Hours no está en la API pública de manera directa,
+    // así que usamos el horario configurado en _config como fallback si existe
+    if (config.day_start) {
+      const [h, m] = config.day_start.split(':').map(Number);
+      dayStartMins = h * 60 + m;
+    }
+    if (config.day_end) {
+      const [h, m] = config.day_end.split(':').map(Number);
+      dayEndMins = h * 60 + m;
+    }
+  } catch {
+    // Usar defaults
+  }
+
+  // ── 4. Detectar si el día está completamente bloqueado ──
+  // Si hay un evento de todo el día o que cubre todo el horario laboral
+  const isDayBlocked = occupiedRanges.some(r =>
+    r.start <= dayStartMins && r.end >= dayEndMins
+  );
+
+  if (isDayBlocked) {
     return {
       requested_slot: null,
       is_available: false,
-      occupied_times: ['CERRADO'],
+      occupied_times: ['DIA_BLOQUEADO'],
       available_slots: [],
       suggested_alternatives: [],
       date_label,
     };
   }
 
-  // Consultar el día completo en UTC para no perder eventos por offset de zona horaria
-  const nextDate = new Date(`${date}T00:00:00Z`);
-  if (isNaN(nextDate.getTime())) {
-    return {
-      requested_slot: null, is_available: false, occupied_times: [], available_slots: [], suggested_alternatives: [],
-      date_label: 'Fecha no válida'
-    };
-  }
-  nextDate.setUTCDate(nextDate.getUTCDate() + 1);
-  const { data } = await calendar.events.list({
-    calendarId: business.google_calendar_id || 'primary',
-    timeMin: `${date}T00:00:00Z`,
-    timeMax: nextDate.toISOString(),
-    singleEvents: true,
-    orderBy: 'startTime',
-  });
-
-  const events = data.items || [];
-
-  // 1. Mapear eventos a rangos de minutos en Chile
-  const occupiedRanges: { start: number; end: number }[] = [];
-  for (const event of events) {
-    const start = (event.start?.dateTime || event.start?.date) as string;
-    const end = (event.end?.dateTime || event.end?.date) as string;
-    if (start && end) {
-      const dStart = new Date(start);
-      const dEnd = new Date(end);
-
-      const getMins = (d: Date) => {
-        const h = Number(d.toLocaleTimeString('es-CL', { hour: '2-digit', hour12: false, timeZone: 'America/Santiago' }));
-        const m = Number(d.toLocaleTimeString('es-CL', { minute: '2-digit', hour12: false, timeZone: 'America/Santiago' }));
-        return h * 60 + m;
-      };
-
-      occupiedRanges.push({ start: getMins(dStart), end: getMins(dEnd) });
-    }
-  }
-
-  // 2. Generar slots con aritmética pura
-  const available_slots: string[] = [];
-  const pad = (n: number) => String(n).padStart(2, '0');
-  const [startH, startM] = dayStart.split(':').map(Number);
-  const [endH, endM] = dayEnd.split(':').map(Number);
-  const startMins = startH * 60 + startM;
-  const endMins = endH * 60 + endM;
-
+  // ── 5. Generar slots disponibles ──
   const now = new Date();
   const todayChile = now.toLocaleDateString('en-CA', { timeZone: 'America/Santiago' });
-  const nowChileStr = now.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/Santiago' });
+  const nowChileStr = now.toLocaleTimeString('es-CL', {
+    hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/Santiago'
+  });
   const [nowH, nowM] = nowChileStr.split(':').map(Number);
   const nowMinsChile = nowH * 60 + nowM;
 
-  for (let mins = startMins; mins <= endMins - duration; mins += 30) {
-    const slotMinsStart = mins;
-    const slotMinsEnd = mins + duration;
+  const available_slots: string[] = [];
 
-    // Verificar si el slot solapa con cualquier rango ocupado
-    const isOccupied = occupiedRanges.some(range => {
-      return (slotMinsStart < range.end) && (slotMinsEnd > range.start);
-    });
+  for (let mins = dayStartMins; mins <= dayEndMins - duration; mins += 30) {
+    const slotEnd = mins + duration;
 
+    // ¿Solapa con algún rango ocupado?
+    const isOccupied = occupiedRanges.some(r =>
+      mins < r.end && slotEnd > r.start
+    );
     if (isOccupied) continue;
 
-    // 3. Verificar anticipación mínima (si es hoy)
-    if (date === todayChile) {
-      if (mins < nowMinsChile + (leadTimeHours * 60)) continue;
-    }
+    // ¿Es hoy y ya pasó la hora mínima de anticipación?
+    if (date === todayChile && mins < nowMinsChile + (leadTimeHours * 60)) continue;
 
-    const slot = `${pad(Math.floor(mins / 60))}:${pad(mins % 60)}`;
-    available_slots.push(slot);
+    available_slots.push(`${pad(Math.floor(mins / 60))}:${pad(mins % 60)}`);
   }
 
-  const dateObj = new Date(`${date}T12:00:00`);
-  const date_label = dateObj.toLocaleDateString('es-CL', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    timeZone: 'America/Santiago',
-  });
-
   const occupied_times = occupiedRanges.map(r =>
-    `${String(Math.floor(r.start / 60)).padStart(2, '0')}:${String(r.start % 60).padStart(2, '0')}`
+    `${pad(Math.floor(r.start / 60))}:${pad(r.start % 60)}`
   );
 
   return {
