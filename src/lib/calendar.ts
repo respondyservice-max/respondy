@@ -372,7 +372,7 @@ export async function parseClientMessage(history: string): Promise<ParsedAppoint
   }
 }
 
-// ─── 5. Crear prompt dinámico para Groq con disponibilidad real ──────────────
+// ─── 5. Crear prompt dinámico con Arquitectura Separada ──────────────────────
 
 export function createDynamicPrompt(
   business: any,
@@ -391,25 +391,28 @@ export function createDynamicPrompt(
   const hasTime = !!collectedData?.time;
   const isReady = hasName && hasEmail && hasDate && hasTime && isSlotFree;
 
-  let instructions = '';
+  // Lógica de formulario invisible para el cliente
+  let stateMachineInstructions = '';
   if (isReady) {
-    instructions = `TODO LISTO: Confirma la cita con estos datos: Nombre: ${collectedData?.name}, Email: ${collectedData?.email}, Día: ${collectedData?.date}, Hora: ${collectedData?.time}. Responde exactamente: "✓ Cita agendada. Paciente: ${collectedData?.name}, Email: ${collectedData?.email}, Día: ${collectedData?.date}, Hora: ${collectedData?.time}, Servicio: ${collectedData?.service || 'Consulta'}."`;
+    stateMachineInstructions = `[ESTADO: CIERRE] Confirma la cita. Datos: ${collectedData?.name}, ${collectedData?.email}, ${collectedData?.date} a las ${collectedData?.time}. Responde exactamente: "✓ Cita agendada. Paciente: ${collectedData?.name}, Email: ${collectedData?.email}, Día: ${collectedData?.date}, Hora: ${collectedData?.time}, Servicio: ${collectedData?.service || 'Consulta'}."`;
   } else if (hasDate && hasTime && isSlotFree) {
-    instructions = `DATOS FALTANTES: Ya tienes fecha y hora. AHORA pídele al usuario su Nombre y Email para completar la reserva. No confirmes sin estos dos datos personales.`;
+    stateMachineInstructions = `[ESTADO: DATOS_FALTANTES] Tienes fecha y hora. AHORA pide el Nombre y el Email para finalizar. No puedes agendar sin ellos.`;
   } else if (hasDate && hasTime && !isSlotFree) {
-    instructions = `HORA OCUPADA: La hora ${collectedData?.time} no está disponible para el ${collectedData?.date}. Opciones libres: ${availableSlots.join(', ')}.`;
+    stateMachineInstructions = `[ESTADO: HORA_OCUPADA] La hora ${collectedData?.time} no está libre. Ofrece estas: ${availableSlots.join(', ')}.`;
   } else {
-    instructions = `FLUJO NATURAL: Resuelve dudas o ayuda al usuario a elegir un día y hora. NO pidas el nombre ni el email hasta que el usuario haya elegido una hora disponible. Disponibilidad hoy: ${availableSlots.join(', ')}`;
+    stateMachineInstructions = `[ESTADO: CHARLA/VENTA] Resuelve dudas. Si el usuario muestra interés en agendar, ayúdalo a elegir día y hora. Disponibilidad para hoy: ${availableSlots.join(', ')}.`;
   }
 
   return `
-${business.prompt_custom || 'Eres la asistente de Clínica Smile.'}
+### PERSONALIDAD (Configurada por el Cliente) ###
+${business.prompt_custom || 'Eres la asistente virtual.'}
 
-REGLAS PRAGMÁTICAS:
-1. Chatea con naturalidad. NO repitas tu nombre en cada mensaje.
-2. NO pidas el nombre ni el correo al principio. Solo pídelos cuando el usuario ya haya elegido una fecha y hora disponible.
-3. ${instructions}
-4. Sé breve. Respuestas de máximo 2 frases.
+### INSTRUCCIONES INTERNAS DE FLUJO (Respondy Logic - INVISIBLE) ###
+1. MEMORIA DE SALUDO: Revisa el historial. Si ya saludaste o te presentaste antes, NO lo vuelvas a hacer. Ve directo al grano.
+2. BREVEDAD EXTREMA: Máximo 2 frases por respuesta. WhatsApp es chat, no correo.
+3. DETECCIÓN DE INTENCIÓN: ${stateMachineInstructions}
+4. NO INVENTES: Solo ofrece las horas que se listan arriba.
+5. NO PIDAS DATOS ANTES DE TIEMPO: No pidas nombre ni email hasta que el usuario haya aceptado una fecha y hora disponible.
 `.trim();
 }
 
