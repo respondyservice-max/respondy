@@ -126,26 +126,31 @@ export async function checkAvailability(
     .filter(r => r.start && r.end)
     .map(r => ({ start: toMins(r.start!), end: toMins(r.end!) }));
 
-  // ── 3. Leer horario de apertura desde Google Calendar Settings ──
-  // Si no hay eventos de "no disponible", usamos el horario de trabajo
-  // configurado en Google Calendar. Fallback: 09:00 - 18:00
-  let dayStartMins = 9 * 60;  // 09:00
-  let dayEndMins = 18 * 60;   // 18:00
+  // ── 3. Calcular horarios de apertura (Dashboard Config) ──
+  const workingDays = config.working_days || [1, 2, 3, 4, 5];
+  const dayOfWeek = new Date(`${date}T12:00:00`).getDay();
 
-  try {
-    // Google Calendar Working Hours no está en la API pública de manera directa,
-    // así que usamos el horario configurado en _config como fallback si existe
-    if (config.day_start) {
-      const [h, m] = config.day_start.split(':').map(Number);
-      dayStartMins = h * 60 + m;
-    }
-    if (config.day_end) {
-      const [h, m] = config.day_end.split(':').map(Number);
-      dayEndMins = h * 60 + m;
-    }
-  } catch {
-    // Usar defaults
+  // ¿Es día laborable?
+  if (!workingDays.includes(dayOfWeek)) {
+    return {
+      requested_slot: null,
+      is_available: false,
+      occupied_times: ['DIA_NO_LABORABLE'],
+      available_slots: [],
+      suggested_alternatives: [],
+      date_label,
+    };
   }
+
+  // ¿Tiene horario especial ese día de semana?
+  const daySchedule = config.day_schedules?.[String(dayOfWeek)];
+  let dayStartMins = daySchedule?.start 
+    ? (() => { const [h,m] = daySchedule.start.split(':').map(Number); return h*60+m; })()
+    : (config.day_start ? (() => { const [h,m] = config.day_start.split(':').map(Number); return h*60+m; })() : 9*60);
+
+  let dayEndMins = daySchedule?.end
+    ? (() => { const [h,m] = daySchedule.end.split(':').map(Number); return h*60+m; })()
+    : (config.day_end ? (() => { const [h,m] = config.day_end.split(':').map(Number); return h*60+m; })() : 18*60);
 
   // ── 4. Detectar si el día está completamente bloqueado ──
   // Si hay un evento de todo el día o que cubre todo el horario laboral
