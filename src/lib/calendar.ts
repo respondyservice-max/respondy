@@ -199,15 +199,16 @@ export async function checkAvailability(
     `${pad(Math.floor(r.start / 60))}:${pad(r.start % 60)}`
   );
 
-  console.log('🕐 SLOTS DEBUG:', {
-    dayOfWeek,
-    workingDays,
+  console.log('📅 FREEBUSY DEBUG:', {
+    date,
+    busyRanges: busyRanges.map((r: any) => ({ start: r.start, end: r.end })),
+    occupiedRanges,
     dayStartMins,
     dayEndMins,
-    nowMinsChile,
     leadTimeHours,
-    occupiedRanges,
-    available_slots
+    nowMinsChile,
+    available_slots,
+    occupied_times
   });
 
   return {
