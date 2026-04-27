@@ -464,7 +464,7 @@ export function createDynamicPrompt(
 
   } else if (hasDate && hasTime && isSlotFree && !hasName) {
     nextStep = `Fecha y hora confirmadas (${collectedData?.date} a las ${collectedData?.time}).
-    Pide el NOMBRE COMPLETO del paciente.`;
+    Solicita al usuario que escriba su nombre completo.`;
 
   } else if (hasDate && hasTime && isSlotFree && hasName && !hasEmail) {
     nextStep = `Ya tienes nombre y fecha. Pide el EMAIL para enviar la confirmación.`;
@@ -484,15 +484,20 @@ export function createDynamicPrompt(
     NO pidas nombre ni email todavía.`;
   }
 
+  const slotsInfo = availableSlots.length > 0
+    ? `\nÚNICOS HORARIOS VÁLIDOS PARA OFRECER: ${availableSlots.join(', ')}`
+    : '';
+
   return `
 ### MISIÓN ACTUAL ###
 ${nextStep}
+${slotsInfo}
 
 ### RESTRICCIONES TÉCNICAS ###
-0. CONFIRMACIÓN OBLIGATORIA: Si tu misión es CONFIRMAR CITA, tu respuesta DEBE iniciar con ✓. Sin excepción.
-1. PROHIBIDO INVENTAR CONFIRMACIONES: Si tu misión NO es confirmar (ej. tienes que pedir nombre o email), está ESTRICTAMENTE PROHIBIDO decir "tu cita está programada/agendada/confirmada".
-2. Los horarios disponibles ya están indicados en la MISIÓN. No uses otros.
-3. Usa ✓ al inicio SOLO cuando confirmes la cita definitivamente y tengas todos los datos.
+0. NUNCA confirmes con ✓ sin tener nombre real, email, fecha y hora.
+1. SOLO ofrece horarios de la lista ÚNICOS HORARIOS VÁLIDOS. Ningún otro.
+2. Si el usuario pide "en la tarde", filtra esa lista. No inventes.
+3. Muestra horarios en formato 24h.
 4. Prohibido usar placeholders como [Nombre] o [Clínica].
 
 ### PERSONALIDAD ###
