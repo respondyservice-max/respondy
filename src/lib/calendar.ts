@@ -359,11 +359,15 @@ export async function parseClientMessage(history: string): Promise<ParsedAppoint
   if (!process.env.GROQ_API_KEY) return { date: null, time: null, patientName: null, patientEmail: null, service: null };
 
   try {
+    const tz = 'America/Santiago';
     const today = new Date();
     const todayStr = today.toLocaleDateString('es-CL', {
       weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
-      timeZone: 'America/Santiago'
+      timeZone: tz
     });
+    const todayIso = today.toLocaleDateString('en-CA', { timeZone: tz });
+    const tomorrow = new Date(today.getTime() + 86400000);
+    const tomorrowIso = tomorrow.toLocaleDateString('en-CA', { timeZone: tz });
     const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.GROQ_API_KEY}` },
@@ -378,7 +382,9 @@ export async function parseClientMessage(history: string): Promise<ParsedAppoint
             IMPORTANTE: El campo "time" SIEMPRE en formato HH:MM en 24 horas. 
             REGLA DE HORA: Asume siempre horario de tarde (PM) si piden "1", "2", "3", "4", "5", "6", "7" (ej. "a las 2" → "14:00", "a las 5" → "17:00").
             Ejemplos: "a las 11" → "11:00", "1030" → "10:30", "3pm" → "15:00", "a las 2" → "14:00", "2" → "14:00", "a las 4" → "16:00".
-            Si solo pregunta disponibilidad o información, es false. Hoy es ${todayStr}.`,
+            Hoy es ${todayStr} (${todayIso}). 
+            "mañana" = ${tomorrowIso}. 
+            "el lunes" o "mañana lunes" = próximo lunes en formato YYYY-MM-DD.`,
           },
           { role: 'user', content: `Chat:\n${history}` },
         ],
