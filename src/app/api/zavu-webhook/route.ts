@@ -173,7 +173,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const botResponse = (groqData.choices?.[0]?.message?.content || 'Error técnico de conexión con IA.').trim();
+    let botResponse = (groqData.choices?.[0]?.message?.content || 'Error técnico de conexión con IA.').trim();
 
     // 7. ACCIONES Y ENVÍO
     const conf = extractConfirmation(botResponse);
@@ -194,11 +194,15 @@ export async function POST(request: NextRequest) {
       const a = upcoming.find(x => x.id === canc);
       if (a && a.google_event_id) await deleteCalendarEvent(targetBusiness, a.google_event_id);
       if (a) await supabaseAdmin.from('appointments').delete().eq('id', a.id);
-    } else if (conf && finalDate && finalTime && finalName && finalEmail) {
-      const eventRes = await createCalendarEvent(targetBusiness, { 
-        patientName: finalName, patientPhone: normalizedPhone, patientEmail: finalEmail, 
-        service: finalService || 'Consulta', date: finalDate, time: finalTime 
-      });
+    } else if (conf) {
+      if (!finalName || !finalEmail || !finalDate || !finalTime) {
+        console.log('⚠️ Bot intentó confirmar sin datos completos:', { finalName, finalEmail, finalDate, finalTime });
+        botResponse = "¡Casi listo! Para agendar tu hora en el sistema, necesito que me confirmes tu nombre completo y correo electrónico por favor.";
+      } else {
+        const eventRes = await createCalendarEvent(targetBusiness, { 
+          patientName: finalName, patientPhone: normalizedPhone, patientEmail: finalEmail, 
+          service: finalService || 'Consulta', date: finalDate, time: finalTime 
+        });
       if (eventRes.success) {
         const ticket = `✅ *Cita Confirmada*\n👤 ${finalName}\n📅 ${finalDate}\n⏰ ${finalTime}\n📝 ${finalService || 'Consulta'}`;
         await fetch('https://api.zavu.dev/v1/messages', {
@@ -208,6 +212,7 @@ export async function POST(request: NextRequest) {
         });
         await supabaseAdmin.from('conversations').insert({ business_id: targetBusiness.id, phone_from: normalizedPhone, message_type: 'outgoing', message_text: ticket });
       }
+    }
     }
 
     await fetch('https://api.zavu.dev/v1/messages', {
