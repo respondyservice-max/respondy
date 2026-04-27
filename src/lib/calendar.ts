@@ -383,7 +383,7 @@ export async function parseClientMessage(history: string): Promise<ParsedAppoint
             REGLA DE HORA: Asume siempre horario de tarde (PM) si piden "1", "2", "3", "4", "5", "6", "7" (ej. "a las 2" → "14:00", "a las 5" → "17:00").
             Ejemplos: "a las 11" → "11:00", "1030" → "10:30", "3pm" → "15:00", "a las 2" → "14:00", "2" → "14:00", "a las 4" → "16:00".
             Hoy es ${todayStr} (${todayIso}). 
-            "mañana" = ${tomorrowIso}. 
+            "mañana" = ${tomorrowIso} exactamente. No calcules, usa ese valor directo.
             "el lunes" o "mañana lunes" = próximo lunes en formato YYYY-MM-DD.`,
           },
           { role: 'user', content: `Chat:\n${history}` },
