@@ -153,7 +153,7 @@ export async function POST(request: NextRequest) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.GROQ_API_KEY}` },
       body: JSON.stringify({
-        model: 'llama-3.1-8b-instant',
+        model: 'llama-3.3-70b-versatile',
         messages: [
           { role: 'system', content: dynamicPrompt },
           ...historyArray.map(m => ({ role: m.message_type === 'incoming' ? 'user' : 'assistant', content: m.message_text })),
