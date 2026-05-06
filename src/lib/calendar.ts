@@ -72,8 +72,8 @@ export async function checkAvailability(
   const duration = config.appointment_duration || business.appointment_duration || 45;
   const leadTimeHours = config.min_lead_time_hours || 0;
 
-  const date_label = new Date(`${date}T12:00:00`).toLocaleDateString('es-CL', {
-    weekday: 'long', day: 'numeric', month: 'long', timeZone: 'America/Santiago'
+  const date_label = new Date(`${date}T12:00:00Z`).toLocaleDateString('es-CL', {
+    weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC'
   });
 
   // Validar fecha
@@ -114,11 +114,19 @@ export async function checkAvailability(
   const pad = (n: number) => String(n).padStart(2, '0');
 
   const toMins = (isoStr: string) => {
-    const d = new Date(isoStr);
-    const timeStr = d.toLocaleTimeString('es-CL', {
-      hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/Santiago'
-    });
-    const [h, m] = timeStr.split(':').map(Number);
+    // Si es un string de Google (con Z o desfase), usamos Date para convertir a Santiago
+    if (isoStr.includes('Z') || isoStr.match(/[+-]\d{2}:?\d{2}$/)) {
+      const d = new Date(isoStr);
+      const timeStr = d.toLocaleTimeString('es-CL', {
+        hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/Santiago'
+      });
+      const [h, m] = timeStr.split(':').map(Number);
+      return h * 60 + m;
+    }
+    // Si es un string local (YYYY-MM-DDTHH:MM), extraemos HH:MM directamente
+    const timePart = isoStr.split('T')[1];
+    if (!timePart) return 0;
+    const [h, m] = timePart.split(':').map(Number);
     return h * 60 + m;
   };
 
@@ -128,7 +136,7 @@ export async function checkAvailability(
 
   // ── 3. Calcular horarios de apertura (Dashboard Config) ──
   const workingDays = config.working_days || [1, 2, 3, 4, 5];
-  const dayOfWeek = new Date(`${date}T12:00:00`).getDay();
+  const dayOfWeek = new Date(`${date}T12:00:00Z`).getUTCDay();
 
   // ¿Es día laborable?
   if (!workingDays.includes(dayOfWeek)) {

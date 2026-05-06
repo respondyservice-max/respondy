@@ -88,7 +88,7 @@ export async function POST(request: NextRequest) {
       if (parsed.service) updateData.service = parsed.service;
       
       if (parsed.date && parsed.time) {
-        const d = new Date(`${parsed.date}T${parsed.time}:00`);
+        const d = new Date(`${parsed.date}T${parsed.time}:00-04:00`);
         if (!isNaN(d.getTime())) updateData.date_time = d.toISOString();
       }
 
@@ -108,8 +108,8 @@ export async function POST(request: NextRequest) {
 
     const finalName = parsed.patientName || sessionAppt?.patient_name || null;
     const finalEmail = parsed.patientEmail || sessionAppt?.patient_email || null;
-    const finalDate = parsed.date || (sessionAppt?.date_time?.split('T')[0]) || null;
-    const finalTime = parsed.time || (sessionAppt?.date_time?.split('T')[1]?.substring(0, 5)) || null;
+    const finalDate = parsed.date || (sessionAppt?.date_time ? new Date(sessionAppt.date_time).toLocaleDateString('en-CA', { timeZone: 'America/Santiago' }) : null);
+    const finalTime = parsed.time || (sessionAppt?.date_time ? new Date(sessionAppt.date_time).toLocaleTimeString('en-GB', { timeZone: 'America/Santiago', hour: '2-digit', minute: '2-digit' }) : null);
     const finalService = parsed.service || sessionAppt?.service || null;
 
     // 5. DISPONIBILIDAD
@@ -184,7 +184,7 @@ export async function POST(request: NextRequest) {
     if (reag && upcoming) {
       const a = upcoming.find(x => x.id === reag.id);
       if (a && reag.date && reag.time) {
-        const d = new Date(`${reag.date}T${reag.time}:00`);
+        const d = new Date(`${reag.date}T${reag.time}:00-04:00`);
         if (!isNaN(d.getTime())) {
           if (a.google_event_id) await updateCalendarEvent(targetBusiness, a.google_event_id, reag.date, reag.time);
           await supabaseAdmin.from('appointments').update({ date_time: d.toISOString() }).eq('id', a.id);
