@@ -11,6 +11,7 @@ interface ServiceItem {
   id: string;
   name: string;
   isVideo: boolean;
+  duration: number; // duración en minutos
 }
 
 export default function Settings() {
@@ -179,7 +180,7 @@ Al finalizar, indica que recibirá un ticket de confirmación por este medio.
                   <h2 className="text-xl font-bold flex items-center gap-2"><Plus className="w-6 h-6 text-blue-600" /> 1. Servicios y Precios</h2>
                   <p className="text-xs text-gray-500 mt-1">Define qué ofreces y si es por videollamada 🎥</p>
                 </div>
-                <button onClick={() => setServicesList([...servicesList, { id: Math.random().toString(36).substring(7), name: '', isVideo: false }])} className="px-4 py-2 bg-blue-50 text-blue-600 rounded-xl text-sm font-bold hover:bg-blue-100 transition flex items-center gap-2"><Plus className="w-4 h-4" /> Agregar</button>
+                <button onClick={() => setServicesList([...servicesList, { id: Math.random().toString(36).substring(7), name: '', isVideo: false, duration: 45 }])} className="px-4 py-2 bg-blue-50 text-blue-600 rounded-xl text-sm font-bold hover:bg-blue-100 transition flex items-center gap-2"><Plus className="w-4 h-4" /> Agregar</button>
               </div>
               <div className="space-y-3">
                 {servicesList.map((service, idx) => (
@@ -189,6 +190,22 @@ Al finalizar, indica que recibirá un ticket de confirmación por este medio.
                       newList[idx].name = e.target.value;
                       setServicesList(newList);
                     }} placeholder="Ej: Evaluación Dental" className="flex-1 bg-transparent border-none outline-none text-sm font-medium" />
+                    <div className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg px-2 py-1">
+                      <input
+                        type="number"
+                        min={5}
+                        max={480}
+                        step={5}
+                        value={service.duration ?? 45}
+                        onChange={e => {
+                          const newList = [...servicesList];
+                          newList[idx].duration = parseInt(e.target.value) || 45;
+                          setServicesList(newList);
+                        }}
+                        className="w-12 bg-transparent border-none outline-none text-sm font-bold text-gray-700 text-center"
+                      />
+                      <span className="text-xs text-gray-400 font-medium">min</span>
+                    </div>
                     <button onClick={() => {
                       const newList = [...servicesList];
                       newList[idx].isVideo = !newList[idx].isVideo;

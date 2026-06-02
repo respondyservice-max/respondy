@@ -67,9 +67,15 @@ export async function getGoogleCalendarClient(business: any) {
 export async function checkAvailability(
   business: any,
   date: string, // YYYY-MM-DD
+  serviceName?: string, // nombre del servicio para buscar duración específica
 ): Promise<AvailabilityResult> {
   const config = business.weekly_schedule?._config || {};
-  const duration = config.appointment_duration || business.appointment_duration || 45;
+  const servicesList: Array<{name: string; duration?: number}> = config.services_list || [];
+  // Buscar duración específica del servicio solicitado (case-insensitive)
+  const matchedService = serviceName
+    ? servicesList.find(s => s.name?.toLowerCase() === serviceName.toLowerCase())
+    : null;
+  const duration = matchedService?.duration || config.appointment_duration || business.appointment_duration || 45;
   const leadTimeHours = config.min_lead_time_hours || 0;
 
   const date_label = new Date(`${date}T12:00:00Z`).toLocaleDateString('es-CL', {
@@ -248,7 +254,12 @@ export async function createCalendarEvent(
     const calendar = google.calendar({ version: 'v3', auth });
 
     const config = business.weekly_schedule?._config || {};
-    const duration = params.durationMinutes || config.appointment_duration || business.appointment_duration || 45;
+    const servicesList: Array<{name: string; duration?: number}> = config.services_list || [];
+    // Buscar duración específica del servicio solicitado
+    const matchedService = params.service
+      ? servicesList.find(s => s.name?.toLowerCase() === params.service?.toLowerCase())
+      : null;
+    const duration = params.durationMinutes || matchedService?.duration || config.appointment_duration || business.appointment_duration || 45;
     const srvName = params.service || config.service_name || business.service_name || 'Consulta';
     const srvDesc = config.service_description || business.service_description || '';
     const startDateTime = new Date(`${params.date}T${params.time}:00`);

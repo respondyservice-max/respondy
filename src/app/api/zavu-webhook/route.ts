@@ -115,7 +115,7 @@ export async function POST(request: NextRequest) {
     // 5. DISPONIBILIDAD
     let availability = null;
     if (targetBusiness.google_calendar_access_token_encrypted && finalDate) {
-      availability = await checkAvailability(targetBusiness, finalDate);
+      availability = await checkAvailability(targetBusiness, finalDate, finalService || undefined);
     }
 
     const { data: upcoming } = await supabaseAdmin.from('appointments').select('*').eq('business_id', targetBusiness.id).gte('date_time', new Date().toISOString()).ilike('patient_phone', `%${normalizedPhone}%`);
