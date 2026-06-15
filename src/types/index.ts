@@ -45,6 +45,8 @@ export interface Business {
   
   created_at: string;
   updated_at: string;
+  message_limit?: number;
+  extra_messages?: number;
 }
 
 export interface Appointment {

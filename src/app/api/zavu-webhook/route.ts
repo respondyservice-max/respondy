@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { decrypt } from '@/lib/crypto';
+import { getMessageStats } from '@/lib/messageStats';
 import {
   checkAvailability,
   parseClientMessage,
@@ -37,6 +38,28 @@ export async function POST(request: NextRequest) {
       message_type: 'incoming',
       message_text: messageText,
     });
+
+    // VERIFICAR LÍMITE DE MENSAJES DEL CICLO MENSUAL
+    const stats = await getMessageStats(targetBusiness, supabaseAdmin);
+    if (stats.isOverLimit) {
+      console.log(`🚫 Negocio ${targetBusiness.id} superó su límite de mensajes (${stats.used}/${stats.limit})`);
+      const blockMessage = "⚠️ Este negocio ha alcanzado su límite de mensajes del mes. Para más información, contacta directamente al negocio.";
+      const zavuApiKey = decrypt(targetBusiness.zavu_api_key_encrypted);
+      
+      await fetch('https://api.zavu.dev/v1/messages', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${zavuApiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ senderId: senderIdFromZavu, to: phoneFrom, text: blockMessage }),
+      });
+      await supabaseAdmin.from('conversations').insert({
+        business_id: targetBusiness.id,
+        phone_from: normalizedPhone,
+        message_type: 'outgoing',
+        message_text: blockMessage
+      });
+      
+      return NextResponse.json({ success: true, overLimit: true });
+    }
 
     await new Promise(r => setTimeout(r, 1000));
 

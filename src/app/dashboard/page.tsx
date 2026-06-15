@@ -8,6 +8,20 @@ import DashboardNav from '@/components/DashboardNav';
 import { AlertCircle, CheckCircle, Clock, MessageSquare, TrendingUp, ArrowRight } from 'lucide-react';
 import type { Business } from '@/types';
 
+interface MessageStatsData {
+  used: number;
+  limit: number;
+  extra: number;
+  cycleStart: string;
+  cycleEnd: string;
+  cycleStartFormatted: string;
+  cycleEndFormatted: string;
+  isOverLimit: boolean;
+  isWarning: boolean;
+  remaining: number;
+  percentage: number;
+}
+
 export default function Dashboard() {
   const router = useRouter();
   const [business, setBusiness] = useState<Business | null>(null);
@@ -19,6 +33,58 @@ export default function Dashboard() {
   });
 
   const [aiBotEnabled, setAiBotEnabled] = useState(true);
+  const [msgStats, setMsgStats] = useState<MessageStatsData | null>(null);
+  const [buyingExtra, setBuyingExtra] = useState(false);
+
+  const fetchMessageStats = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      
+      const res = await fetch('/api/business/message-stats', {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`
+        }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setMsgStats(data);
+      }
+    } catch (error) {
+      console.error('Error fetching message stats:', error);
+    }
+  };
+
+  const handleBuyExtraMessages = async () => {
+    if (buyingExtra) return;
+    if (!confirm('¿Deseas comprar una bolsa de 1.000 mensajes extras? (Se activarán de inmediato)')) return;
+
+    setBuyingExtra(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const res = await fetch('/api/business/buy-extra-messages', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`
+        }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        alert(data.message || 'Bolsa de mensajes activada con éxito');
+        await fetchMessageStats();
+      } else {
+        const errData = await res.json();
+        alert(`Error: ${errData.error || 'No se pudo comprar la bolsa de mensajes'}`);
+      }
+    } catch (error) {
+      console.error('Error buying extra messages:', error);
+      alert('Error de conexión');
+    } finally {
+      setBuyingExtra(false);
+    }
+  };
 
   useEffect(() => {
     const fetchBusiness = async () => {
@@ -60,6 +126,24 @@ export default function Dashboard() {
           appointments: appointments || 0,
           conversations: conversations || 0,
         });
+
+        // Cargar estadísticas del ciclo mensual
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session) {
+            const res = await fetch('/api/business/message-stats', {
+              headers: {
+                'Authorization': `Bearer ${session.access_token}`
+              }
+            });
+            if (res.ok) {
+              const statsData = await res.json();
+              setMsgStats(statsData);
+            }
+          }
+        } catch (err) {
+          console.error('Error fetching message stats in effect:', err);
+        }
       } catch (error) {
         console.error('Error:', error);
         router.push('/auth/login');
@@ -143,6 +227,18 @@ export default function Dashboard() {
               </div>
             </div>
           </div>
+        ) : msgStats?.isOverLimit ? (
+          <div className="bg-gradient-to-r from-red-50 to-rose-50 border border-red-200 p-5 mb-8 rounded-xl transition-all duration-300">
+            <div className="flex gap-3">
+              <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <h3 className="font-semibold text-red-900">🔴 Agente IA Suspendido (Límite Excedido)</h3>
+                <p className="text-red-800 text-sm mt-1">
+                  El agente ha dejado de responder porque superaste el límite de mensajes de tu plan. Por favor, compra una bolsa extra para reanudar el servicio de inmediato.
+                </p>
+              </div>
+            </div>
+          </div>
         ) : (
           <div className={`bg-gradient-to-r ${aiBotEnabled ? 'from-green-50 to-emerald-50 border-green-200' : 'from-gray-50 to-slate-100 border-gray-200'} border p-5 mb-8 rounded-xl transition-all duration-300`}>
             <div className="flex justify-between items-start">
@@ -187,12 +283,10 @@ export default function Dashboard() {
 
         {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-          <StatCard
-            title="Mensajes (Enviados y recibidos)"
-            value={`${stats.conversations} / 2000`}
-            icon={<MessageSquare className="w-6 h-6 text-blue-600" />}
-            subtitle="Plan mensual"
-            color="blue"
+          <MessageUsageCard
+            stats={msgStats}
+            onBuyExtra={handleBuyExtraMessages}
+            loadingBuy={buyingExtra}
           />
           <StatCard
             title="Citas agendadas"
@@ -285,5 +379,125 @@ function QuickAction({
         <ArrowRight className="w-5 h-5 text-gray-300 group-hover:text-blue-500 group-hover:translate-x-1 transition-all duration-300" />
       </div>
     </a>
+  );
+}
+
+function MessageUsageCard({
+  stats,
+  onBuyExtra,
+  loadingBuy,
+}: {
+  stats: MessageStatsData | null;
+  onBuyExtra: () => void;
+  loadingBuy: boolean;
+}) {
+  if (!stats) {
+    return (
+      <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 animate-pulse">
+        <div className="h-4 bg-gray-200 rounded w-1/3 mb-4"></div>
+        <div className="h-8 bg-gray-200 rounded w-1/2 mb-2"></div>
+        <div className="h-2 bg-gray-200 rounded w-full mb-4"></div>
+      </div>
+    );
+  }
+
+  const {
+    used,
+    limit,
+    cycleEndFormatted,
+    isOverLimit,
+    isWarning,
+    percentage,
+    remaining,
+  } = stats;
+
+  let barColor = 'bg-gradient-to-r from-blue-500 to-indigo-600';
+  let textColor = 'text-indigo-600';
+  let badgeColor = 'bg-indigo-50 text-indigo-700';
+
+  if (isOverLimit) {
+    barColor = 'bg-gradient-to-r from-red-500 to-rose-600';
+    textColor = 'text-red-600';
+    badgeColor = 'bg-red-50 text-red-700';
+  } else if (isWarning) {
+    barColor = 'bg-gradient-to-r from-amber-500 to-orange-500';
+    textColor = 'text-amber-600';
+    badgeColor = 'bg-amber-50 text-amber-700';
+  }
+
+  return (
+    <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 hover:shadow-md transition-all duration-300 flex flex-col justify-between">
+      <div>
+        <div className="flex justify-between items-start mb-2">
+          <div>
+            <p className="text-gray-500 text-sm font-medium">Consumo de mensajes</p>
+            <div className="flex items-baseline gap-2 mt-1">
+              <span className="text-3xl font-extrabold text-gray-900">{used.toLocaleString('es-CL')}</span>
+              <span className="text-gray-400 text-sm">/ {limit.toLocaleString('es-CL')}</span>
+            </div>
+          </div>
+          <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${badgeColor}`}>
+            {isOverLimit ? 'Límite superado' : isWarning ? 'Cerca del límite' : 'Plan activo'}
+          </span>
+        </div>
+
+        {/* Progress bar */}
+        <div className="w-full bg-gray-100 rounded-full h-3 mb-3 mt-2 overflow-hidden">
+          <div
+            className={`h-full rounded-full transition-all duration-500 ${barColor}`}
+            style={{ width: `${percentage}%` }}
+          />
+        </div>
+
+        <div className="flex justify-between text-xs text-gray-500 mb-4">
+          <span>Ciclo actual</span>
+          <span className="font-semibold text-gray-700">
+            Termina el {cycleEndFormatted}
+          </span>
+        </div>
+
+        {/* Alerts inside card */}
+        {isOverLimit && (
+          <div className="bg-red-50 border border-red-100 rounded-lg p-3 text-sm text-red-800 flex gap-2 mb-4">
+            <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="font-semibold">🔴 Agente Pausado</p>
+              <p className="text-xs text-red-700 mt-0.5">
+                Has alcanzado el límite de tu plan. Para reactivar el agente de inmediato, puedes comprar una bolsa de mensajes extras.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {isWarning && (
+          <div className="bg-amber-50 border border-amber-100 rounded-lg p-3 text-sm text-amber-800 flex gap-2 mb-4">
+            <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="font-semibold">⚠️ Mensajes Bajos</p>
+              <p className="text-xs text-amber-700 mt-0.5">
+                Solo te quedan {remaining.toLocaleString('es-CL')} mensajes hasta el {cycleEndFormatted}.
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {(isWarning || isOverLimit) && (
+        <button
+          onClick={onBuyExtra}
+          disabled={loadingBuy}
+          className="w-full mt-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold py-2 px-4 rounded-lg text-sm transition-all shadow-sm flex items-center justify-center gap-2 disabled:opacity-50"
+        >
+          {loadingBuy ? (
+            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+          ) : (
+            <>
+              <TrendingUp className="w-4 h-4" />
+              <span>+ Comprar bolsa de 1.000 mensajes</span>
+            </>
+          )}
+        </button>
+      )}
+    </div>
   );
 }
