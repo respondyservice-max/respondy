@@ -55,6 +55,28 @@ export default function Dashboard() {
     }
   };
 
+  const fetchGeneralStats = async (businessId: string) => {
+    try {
+      const { count: conversations } = await supabase
+        .from('conversations')
+        .select('*', { count: 'exact', head: true })
+        .eq('business_id', businessId);
+
+      const { count: appointments } = await supabase
+        .from('appointments')
+        .select('*', { count: 'exact', head: true })
+        .eq('business_id', businessId);
+
+      setStats({
+        messages: conversations || 0,
+        appointments: appointments || 0,
+        conversations: conversations || 0,
+      });
+    } catch (error) {
+      console.error('Error fetching general stats:', error);
+    }
+  };
+
   const handleBuyExtraMessages = async () => {
     if (buyingExtra) return;
     if (!confirm('¿Deseas comprar una bolsa de 1.000 mensajes extras? (Se activarán de inmediato)')) return;
@@ -74,6 +96,9 @@ export default function Dashboard() {
         const data = await res.json();
         alert(data.message || 'Bolsa de mensajes activada con éxito');
         await fetchMessageStats();
+        if (business) {
+          await fetchGeneralStats(business.id);
+        }
       } else {
         const errData = await res.json();
         alert(`Error: ${errData.error || 'No se pudo comprar la bolsa de mensajes'}`);
@@ -111,21 +136,7 @@ export default function Dashboard() {
         setAiBotEnabled(data.ai_bot_enabled !== false);
 
         // Fetch stats
-        const { count: conversations } = await supabase
-          .from('conversations')
-          .select('*', { count: 'exact', head: true })
-          .eq('business_id', data.id);
-
-        const { count: appointments } = await supabase
-          .from('appointments')
-          .select('*', { count: 'exact', head: true })
-          .eq('business_id', data.id);
-
-        setStats({
-          messages: conversations || 0,
-          appointments: appointments || 0,
-          conversations: conversations || 0,
-        });
+        await fetchGeneralStats(data.id);
 
         // Cargar estadísticas del ciclo mensual
         try {
@@ -154,6 +165,33 @@ export default function Dashboard() {
 
     fetchBusiness();
   }, [router]);
+
+  useEffect(() => {
+    if (!business) return;
+
+    // Suscribirse en tiempo real a inserciones de mensajes de este negocio
+    const channel = supabase
+      .channel(`realtime-conversations-${business.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'conversations',
+          filter: `business_id=eq.${business.id}`
+        },
+        () => {
+          // Actualizar estadísticas al recibir/enviar un mensaje
+          fetchMessageStats();
+          fetchGeneralStats(business.id);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [business]);
 
   const handleToggleAiBot = async () => {
     const newValue = !aiBotEnabled;
