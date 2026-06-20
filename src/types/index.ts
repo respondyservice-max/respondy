@@ -47,6 +47,7 @@ export interface Business {
   updated_at: string;
   message_limit?: number;
   extra_messages?: number;
+  weekly_schedule?: any;
 }
 
 export interface Appointment {

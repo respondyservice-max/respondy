@@ -247,6 +247,7 @@ export async function createCalendarEvent(
     date: string;   // YYYY-MM-DD
     time: string;   // HH:MM
     includeVideoCall?: boolean;
+    durationMinutes?: number;
   }
 ): Promise<{ success: boolean; eventId?: string; eventLink?: string; meetLink?: string; error?: string }> {
   try {

@@ -5,7 +5,7 @@ import { useEffect, useState, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import DashboardNav from '@/components/DashboardNav';
-import { MessageSquare, ArrowLeft, Search, User, Send } from 'lucide-react';
+import { MessageSquare, ArrowLeft, Search, User, Send, Ban } from 'lucide-react';
 import type { Business, Conversation } from '@/types';
 
 export default function ConversationsPage() {
@@ -17,6 +17,7 @@ export default function ConversationsPage() {
   const [search, setSearch] = useState('');
   const [selectedPhone, setSelectedPhone] = useState<string | null>(null);
   const [contactNames, setContactNames] = useState<Record<string, string>>({});
+  const [blocking, setBlocking] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -79,6 +80,52 @@ export default function ConversationsPage() {
       chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
     }
   }, [selectedPhone, conversations]);
+
+  const handleToggleBlock = async () => {
+    if (!business || !selectedPhone) return;
+    setBlocking(true);
+    try {
+      const config = business.weekly_schedule?._config || {};
+      const blockedNumbers = config.blocked_numbers || [];
+      const cleanPhone = selectedPhone.replace(/\+/g, '').replace(/\s+/g, '');
+      
+      let newBlockedNumbers: string[];
+      const isBlocked = blockedNumbers.includes(cleanPhone);
+      
+      if (isBlocked) {
+        newBlockedNumbers = blockedNumbers.filter((n: string) => n !== cleanPhone);
+      } else {
+        newBlockedNumbers = [...blockedNumbers, cleanPhone];
+      }
+
+      const updatedSchedule = {
+        ...(business.weekly_schedule || {}),
+        _config: {
+          ...(business.weekly_schedule?._config || {}),
+          blocked_numbers: newBlockedNumbers
+        }
+      };
+
+      const { error } = await supabase
+        .from('businesses')
+        .update({ weekly_schedule: updatedSchedule })
+        .eq('id', business.id);
+
+      if (error) throw error;
+
+      setBusiness({
+        ...business,
+        weekly_schedule: updatedSchedule
+      });
+
+      alert(isBlocked ? '🔓 Número desbloqueado correctamente' : '🚫 Número bloqueado correctamente');
+    } catch (error) {
+      console.error('Error toggle block:', error);
+      alert('Error al actualizar el estado de bloqueo');
+    } finally {
+      setBlocking(false);
+    }
+  };
 
   // Agrupar mensajes por teléfono
   const contacts = useMemo(() => {
@@ -170,10 +217,15 @@ export default function ConversationsPage() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex justify-between items-center mb-1">
-                      <span className="font-semibold text-gray-900 truncate text-sm">
-                        {contact.phone} {contactNames[contact.phone.replace(/\+/g, '').replace(/\s+/g, '')] ? <span className="font-normal text-gray-500">({contactNames[contact.phone.replace(/\+/g, '').replace(/\s+/g, '')]})</span> : ''}
+                      <span className="font-semibold text-gray-900 truncate text-sm flex items-center gap-1.5">
+                        <span>
+                          {contact.phone} {contactNames[contact.phone.replace(/\+/g, '').replace(/\s+/g, '')] ? <span className="font-normal text-gray-500">({contactNames[contact.phone.replace(/\+/g, '').replace(/\s+/g, '')]})</span> : ''}
+                        </span>
+                        {business.weekly_schedule?._config?.blocked_numbers?.includes(contact.phone.replace(/\+/g, '').replace(/\s+/g, '')) && (
+                          <span className="w-1.5 h-1.5 bg-red-500 rounded-full flex-shrink-0" title="Número bloqueado"></span>
+                        )}
                       </span>
-                      <span className="text-[10px] text-gray-400">
+                      <span className="text-[10px] text-gray-400 flex-shrink-0">
                         {new Date(contact.timestamp).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}
                       </span>
                     </div>
@@ -190,22 +242,50 @@ export default function ConversationsPage() {
           {selectedPhone ? (
             <>
               {/* Chat Header */}
-              <div className="p-4 border-b border-gray-100 flex items-center gap-4">
-                <button onClick={() => setSelectedPhone(null)} className="sm:hidden p-2 -ml-2 text-gray-400">
-                  <ArrowLeft className="w-5 h-5" />
+              <div className="p-4 border-b border-gray-100 flex items-center justify-between bg-white z-10">
+                <div className="flex items-center gap-4">
+                  <button onClick={() => setSelectedPhone(null)} className="sm:hidden p-2 -ml-2 text-gray-400">
+                    <ArrowLeft className="w-5 h-5" />
+                  </button>
+                  <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white">
+                    <User className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h2 className="font-bold text-gray-900 flex items-center gap-2 flex-wrap">
+                      <span>
+                        {selectedPhone} {contactNames[selectedPhone.replace(/\+/g, '').replace(/\s+/g, '')] ? <span className="font-normal text-gray-500">- {contactNames[selectedPhone.replace(/\+/g, '').replace(/\s+/g, '')]}</span> : ''}
+                      </span>
+                      {business.weekly_schedule?._config?.blocked_numbers?.includes(selectedPhone.replace(/\+/g, '').replace(/\s+/g, '')) && (
+                        <span className="px-2 py-0.5 bg-red-100 text-red-700 text-[10px] font-bold rounded-full border border-red-200 flex items-center gap-1">
+                          <Ban className="w-2.5 h-2.5" />
+                          Bloqueado
+                        </span>
+                      )}
+                    </h2>
+                    <p className="text-[10px] text-green-500 flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 bg-green-500 rounded-full"></span>
+                      Activo por WhatsApp
+                    </p>
+                  </div>
+                </div>
+
+                {/* Botón de Bloqueo Rápido */}
+                <button
+                  onClick={handleToggleBlock}
+                  disabled={blocking}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all duration-200 ${
+                    business.weekly_schedule?._config?.blocked_numbers?.includes(selectedPhone.replace(/\+/g, '').replace(/\s+/g, ''))
+                      ? 'bg-red-50 hover:bg-red-100 text-red-600 border border-red-200'
+                      : 'bg-gray-50 hover:bg-gray-100 text-gray-600 border border-gray-200'
+                  }`}
+                >
+                  <Ban className="w-3.5 h-3.5" />
+                  <span>
+                    {business.weekly_schedule?._config?.blocked_numbers?.includes(selectedPhone.replace(/\+/g, '').replace(/\s+/g, ''))
+                      ? 'Desbloquear'
+                      : 'Bloquear'}
+                  </span>
                 </button>
-                <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white">
-                  <User className="w-5 h-5" />
-                </div>
-                <div>
-                  <h2 className="font-bold text-gray-900">
-                    {selectedPhone} {contactNames[selectedPhone.replace(/\+/g, '').replace(/\s+/g, '')] ? <span className="font-normal text-gray-500">- {contactNames[selectedPhone.replace(/\+/g, '').replace(/\s+/g, '')]}</span> : ''}
-                  </h2>
-                  <p className="text-[10px] text-green-500 flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 bg-green-500 rounded-full"></span>
-                    Activo por WhatsApp
-                  </p>
-                </div>
               </div>
 
               {/* Messages Area */}

@@ -29,7 +29,20 @@ export async function POST(request: NextRequest) {
     let targetBusiness = businesses?.find(b => b.zavu_sender_id_encrypted && decrypt(b.zavu_sender_id_encrypted) === senderIdFromZavu);
     if (!targetBusiness) return NextResponse.json({ error: 'Business no encontrado' }, { status: 404 });
     
-    const normalizedPhone = phoneFrom.replace('+', '');
+    const normalizedPhone = phoneFrom.replace('+', '').trim();
+
+    // VERIFICAR NÚMEROS BLOQUEADOS
+    const scheduleConfig = targetBusiness.weekly_schedule?._config || {};
+    const blockedNumbers = scheduleConfig.blocked_numbers || [];
+    const isBlocked = blockedNumbers.some((num: string) => {
+      const normalizedNum = num.replace('+', '').trim();
+      return normalizedNum === normalizedPhone;
+    });
+
+    if (isBlocked) {
+      console.log(`🚫 Mensaje de número bloqueado (${phoneFrom}) ignorado.`);
+      return NextResponse.json({ success: true, blocked: true });
+    }
 
     // 1. GUARDAR MENSAJE
     await supabaseAdmin.from('conversations').insert({
